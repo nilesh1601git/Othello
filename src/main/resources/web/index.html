@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101614">
+  <title>Othello</title>
+  <link rel="stylesheet" href="/styles.css?v=2">
+</head>
+<body>
+  <main class="shell">
+    <section id="menu-screen" class="screen">
+      <header class="hero">
+        <p class="eyebrow">The classic strategy game</p>
+        <h1>OTHELLO</h1>
+        <p>Outflank a line. Flip the discs. Control the board.</p>
+      </header>
+
+      <div class="menu-grid">
+        <form id="computer-form" class="card">
+          <span class="card-number">01</span>
+          <h2>Play the computer</h2>
+          <p>Choose your side and search difficulty.</p>
+          <label>Name <input name="name" value="You" maxlength="24"></label>
+          <div class="row">
+            <label>Side
+              <select name="color">
+                <option value="BLACK">Black · first</option>
+                <option value="WHITE">White</option>
+              </select>
+            </label>
+            <label>Level
+              <select name="difficulty">
+                <option>EASY</option>
+                <option selected>MEDIUM</option>
+                <option>HARD</option>
+              </select>
+            </label>
+          </div>
+          <button type="submit">Start game</button>
+        </form>
+
+        <article class="card">
+          <span class="card-number">02</span>
+          <h2>Two at this screen</h2>
+          <p>Pass the device after each move.</p>
+          <button id="hotseat-button" type="button">Start local game</button>
+        </article>
+
+        <form id="host-form" class="card">
+          <span class="card-number">03</span>
+          <h2>Host a LAN game</h2>
+          <p>Create a six-character code for another player.</p>
+          <label>Name <input name="name" value="Host" maxlength="24"></label>
+          <label>Side
+            <select name="color">
+              <option value="BLACK">Black · first</option>
+              <option value="WHITE">White</option>
+            </select>
+          </label>
+          <button type="submit">Create LAN game</button>
+        </form>
+
+        <form id="join-form" class="card">
+          <span class="card-number">04</span>
+          <h2>Join a LAN game</h2>
+          <p>Open this page on the same network and enter the host's code.</p>
+          <label>Name <input name="name" value="Guest" maxlength="24"></label>
+          <label>Game code
+            <input id="join-code" name="code" class="code-input" maxlength="6"
+                   autocomplete="off" placeholder="ABC234" required>
+          </label>
+          <button type="submit">Join game</button>
+        </form>
+      </div>
+      <p id="menu-error" class="error" role="alert"></p>
+      <button id="rules-button" class="text-button" type="button">How to play</button>
+    </section>
+
+    <section id="game-screen" class="screen hidden">
+      <header class="game-header">
+        <button id="back-button" class="text-button" type="button">← Main menu</button>
+        <div>
+          <p class="eyebrow">Game <span id="game-code"></span></p>
+          <h1 class="small-title">OTHELLO</h1>
+        </div>
+        <button id="share-button" class="text-button hidden" type="button">Share game</button>
+      </header>
+
+      <div class="score-strip">
+        <article id="black-score" class="score">
+          <span class="disc black" aria-hidden="true"></span>
+          <div><small>Black</small><strong id="black-name">Black</strong></div>
+          <b id="black-count">2</b>
+        </article>
+        <div class="turn-copy">
+          <strong id="status">Black to move.</strong>
+          <span id="player-side"></span>
+        </div>
+        <article id="white-score" class="score">
+          <span class="disc white" aria-hidden="true"></span>
+          <div><small>White</small><strong id="white-name">White</strong></div>
+          <b id="white-count">2</b>
+        </article>
+      </div>
+
+      <div id="board" class="board" role="grid" aria-label="Othello board"></div>
+      <p id="game-error" class="error" role="alert"></p>
+      <div class="game-actions">
+        <button id="undo-button" type="button">Undo</button>
+        <button id="resign-button" class="secondary" type="button">Resign</button>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="rules-dialog">
+    <button id="close-rules" class="dialog-close" type="button" aria-label="Close">×</button>
+    <p class="eyebrow">Rules</p>
+    <h2>How to play</h2>
+    <p>Black starts. Place a disc so that one or more straight lines of opposing
+      discs are trapped between the new disc and another disc of your color.
+      Every trapped disc flips.</p>
+    <p>If you have no legal move, your turn passes. The game ends when neither
+      player can move. The player with more discs wins.</p>
+  </dialog>
+
+  <script src="/app.js?v=2" defer></script>
+</body>
+</html>
