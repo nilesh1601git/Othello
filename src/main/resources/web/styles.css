@@ -134,6 +134,39 @@ button.secondary { color: var(--cream); border-color: #4a5d55; background: var(-
 .error { min-height: 1.4em; margin: 14px 0 0; color: var(--danger); text-align: center; }
 .code-input { text-transform: uppercase; letter-spacing: .18em; font-weight: 800; }
 
+.lan-scan { display: grid; gap: 10px; }
+.lan-scan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+#scan-status { color: var(--muted); font-size: .85rem; line-height: 1.3; }
+#scan-button { width: auto; padding: 8px 12px; }
+.hosted-games {
+  display: grid;
+  gap: 8px;
+  min-height: 3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hosted-empty { color: var(--muted); font-size: .9rem; }
+button.hosted-game {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  color: var(--cream);
+  border-color: #3b5147;
+  background: #0e1713;
+}
+button.hosted-game:hover { filter: brightness(1.12); }
+.hosted-game strong { color: var(--cream); }
+.hosted-game span { color: var(--muted); font-size: .82rem; font-weight: 700; }
+
 .game-header, .score-strip, .game-actions {
   display: flex;
   align-items: center;
@@ -228,15 +261,33 @@ button.secondary { color: var(--cream); border-color: #4a5d55; background: var(-
   pointer-events: none;
 }
 .square .hint {
-  width: 22%;
-  aspect-ratio: 1;
-  background: rgba(223, 193, 132, .78);
-  transition: width .12s ease, background .12s ease;
+  width: 18px;
+  height: 18px;
+  background: rgba(223, 193, 132, .92);
+  transition: width .12s ease, height .12s ease, background .12s ease;
 }
 .square.legal:hover .hint,
 .square.legal:focus-visible .hint {
-  width: 34%;
+  width: 28px;
+  height: 28px;
   background: var(--gold);
+}
+label.show-moves {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--cream);
+  font-size: .95rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+label.show-moves input {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  accent-color: var(--gold);
 }
 .square .mark {
   width: 13%;
@@ -269,7 +320,7 @@ button.secondary { color: var(--cream); border-color: #4a5d55; background: var(-
   .disc.placing, .disc.removing, .disc.flip-out, .disc.flip-in { animation: none; }
 }
 
-.game-actions { justify-content: center; margin-top: 12px; }
+.game-actions { flex-wrap: wrap; justify-content: center; margin-top: 12px; }
 
 dialog {
   width: min(550px, calc(100vw - 28px));

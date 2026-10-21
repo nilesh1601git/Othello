@@ -4,12 +4,15 @@ const board = document.querySelector("#board");
 const menuError = document.querySelector("#menu-error");
 const gameError = document.querySelector("#game-error");
 const sessionKey = "othello-web-session";
+const movesKey = "othello-show-valid-moves";
 
 let access = loadAccess();
 let currentState = null;
 let displayedBoard = null;
 let pollTimer = null;
+let lanPoll = null;
 let isRequesting = false;
+const hostedGames = new Map();
 let animating = false;
 let animationToken = 0;
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -46,6 +49,7 @@ async function useAccess(next) {
   localStorage.setItem(sessionKey, JSON.stringify(access));
   displayedBoard = null;
   board.replaceChildren();
+  stopLanWatch();
   menuScreen.classList.add("hidden");
   gameScreen.classList.remove("hidden");
   await present(next.state, next.frames);
@@ -65,6 +69,7 @@ function showMenu() {
   gameScreen.classList.add("hidden");
   menuScreen.classList.remove("hidden");
   history.replaceState({}, "", location.pathname);
+  watchHostedGames();
 }
 
 function ensureBoard() {
@@ -124,16 +129,22 @@ function paintInstant(boardText, state) {
   if (state) markLast(state);
 }
 
+function showValidMoves() {
+  return document.querySelector("#show-moves").checked;
+}
+
 function syncInteractions(state) {
   const legal = new Set((state?.legalMoves || []).map(move => `${move.row},${move.col}`));
+  const reveal = showValidMoves();
   [...board.children].forEach((square, index) => {
     const row = Math.floor(index / 8);
     const col = index % 8;
     const isLegal = !animating && !isRequesting && legal.has(`${row},${col}`);
-    square.classList.toggle("legal", isLegal);
+    const marked = isLegal && reveal;
+    square.classList.toggle("legal", marked);
     square.disabled = !isLegal;
     square.querySelector(".hint")?.remove();
-    if (isLegal) {
+    if (marked) {
       const hint = document.createElement("span");
       hint.className = "hint";
       square.append(hint);
@@ -361,18 +372,146 @@ document.querySelector("#host-form").addEventListener("submit", event => {
 
 document.querySelector("#join-form").addEventListener("submit", async event => {
   event.preventDefault();
-  setMenuError("");
   const form = new FormData(event.currentTarget);
-  const code = String(form.get("code")).trim().toUpperCase();
+  const code = String(form.get("code") || "").trim().toUpperCase();
+  if (!code) {
+    setMenuError("Select a hosted game, or enter its code.");
+    return;
+  }
+  await joinByCode(code, form.get("name"));
+});
+
+document.querySelector("#scan-button").addEventListener("click", () => scanNetwork());
+
+function joinName() {
+  return document.querySelector("#join-name")?.value || "Guest";
+}
+
+async function joinByCode(code, name) {
+  setMenuError("");
   try {
     const joined = await request(`/api/games/${encodeURIComponent(code)}/join`, {
       method: "POST",
-      body: JSON.stringify({ name: form.get("name") })
+      body: JSON.stringify({ name: name || joinName() })
     });
     useAccess(joined);
   } catch (error) {
     setMenuError(error.message);
   }
+}
+
+async function joinOpen(game) {
+  if (game.origin && game.origin !== location.origin) {
+    location.href = `${game.origin}/?join=${encodeURIComponent(game.gameId)}`;
+    return;
+  }
+  await joinByCode(game.gameId, joinName());
+}
+
+function watchHostedGames() {
+  if (lanPoll) {
+    return;
+  }
+  refreshLocalGames();
+  lanPoll = setInterval(refreshLocalGames, 2000);
+}
+
+function stopLanWatch() {
+  clearInterval(lanPoll);
+  lanPoll = null;
+}
+
+async function refreshLocalGames() {
+  if (menuScreen.classList.contains("hidden")) {
+    return;
+  }
+  try {
+    const data = await request("/api/games");
+    for (const key of [...hostedGames.keys()]) {
+      if (key.startsWith("|")) {
+        hostedGames.delete(key);
+      }
+    }
+    rememberGames(data.games || []);
+    if (!document.querySelector("#scan-button").disabled) {
+      const count = hostedGames.size;
+      document.querySelector("#scan-status").textContent = count
+        ? `${count} hosted game${count === 1 ? "" : "s"} waiting.`
+        : "No hosted games yet. Scan the network, or enter a code.";
+    }
+  } catch {
+    // The menu stays usable with a typed code.
+  }
+}
+
+async function scanNetwork() {
+  const button = document.querySelector("#scan-button");
+  const status = document.querySelector("#scan-status");
+  button.disabled = true;
+  status.textContent = "Scanning this network…";
+  try {
+    const data = await request("/api/lan/scan");
+    hostedGames.clear();
+    rememberGames(data.games || []);
+    const count = hostedGames.size;
+    status.textContent = count
+      ? `Found ${count} hosted game${count === 1 ? "" : "s"}.`
+      : "No hosted games found. You can still enter a code.";
+  } catch (error) {
+    status.textContent = "Could not scan the network.";
+    setMenuError(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function rememberGames(games) {
+  for (const game of games) {
+    hostedGames.set(`${game.origin || ""}|${game.gameId}`, game);
+  }
+  renderHostedGames();
+}
+
+function renderHostedGames() {
+  const list = document.querySelector("#hosted-games");
+  list.replaceChildren();
+  const games = [...hostedGames.values()];
+  if (!games.length) {
+    const empty = document.createElement("li");
+    empty.className = "hosted-empty";
+    empty.textContent = "No hosted games yet.";
+    list.append(empty);
+    return;
+  }
+  for (const game of games) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "hosted-game";
+    const name = document.createElement("strong");
+    name.textContent = game.hostName || "Host";
+    const meta = document.createElement("span");
+    let where = game.gameId;
+    if (game.origin && game.origin !== location.origin) {
+      try {
+        where = new URL(game.origin).host;
+      } catch {
+        where = game.origin;
+      }
+    }
+    meta.textContent = `${title(game.hostColor)} · ${where}`;
+    button.append(name, meta);
+    button.addEventListener("click", () => joinOpen(game));
+    item.append(button);
+    list.append(item);
+  }
+}
+
+const showMoves = document.querySelector("#show-moves");
+showMoves.checked = localStorage.getItem(movesKey) !== "false";
+showMoves.addEventListener("change", () => {
+  localStorage.setItem(movesKey, showMoves.checked ? "true" : "false");
+  if (currentState) syncInteractions(currentState);
 });
 
 document.querySelector("#undo-button").addEventListener("click", () => gameAction("undo"));
@@ -410,9 +549,13 @@ function loadAccess() {
   }
 }
 
+watchHostedGames();
 const joinCode = new URLSearchParams(location.search).get("join");
-if (joinCode) document.querySelector("#join-code").value = joinCode.toUpperCase();
-if (access) {
+if (joinCode) {
+  document.querySelector("#join-code").value = joinCode.toUpperCase();
+  joinByCode(joinCode.toUpperCase(), document.querySelector("#join-name").value)
+    .finally(() => history.replaceState({}, "", location.pathname));
+} else if (access) {
   refreshState().then(() => {
     if (currentState) {
       menuScreen.classList.add("hidden");

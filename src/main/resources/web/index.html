@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101614">
   <title>Othello</title>
-  <link rel="stylesheet" href="/styles.css?v=2">
+  <link rel="stylesheet" href="/styles.css?v=4">
 </head>
 <body>
   <main class="shell">
@@ -50,7 +50,7 @@
         <form id="host-form" class="card">
           <span class="card-number">03</span>
           <h2>Host a LAN game</h2>
-          <p>Create a six-character code for another player.</p>
+          <p>Start a game. The other player can scan this network and join it.</p>
           <label>Name <input name="name" value="Host" maxlength="24"></label>
           <label>Side
             <select name="color">
@@ -64,13 +64,20 @@
         <form id="join-form" class="card">
           <span class="card-number">04</span>
           <h2>Join a LAN game</h2>
-          <p>Open this page on the same network and enter the host's code.</p>
-          <label>Name <input name="name" value="Guest" maxlength="24"></label>
+          <p>Scan this network for a hosted game, or enter the host's code.</p>
+          <label>Name <input id="join-name" name="name" value="Guest" maxlength="24"></label>
+          <div class="lan-scan">
+            <div class="lan-scan-head">
+              <span id="scan-status">Looking for hosted games…</span>
+              <button id="scan-button" type="button">Scan network</button>
+            </div>
+            <ul id="hosted-games" class="hosted-games"></ul>
+          </div>
           <label>Game code
             <input id="join-code" name="code" class="code-input" maxlength="6"
-                   autocomplete="off" placeholder="ABC234" required>
+                   autocomplete="off" placeholder="ABC234">
           </label>
-          <button type="submit">Join game</button>
+          <button type="submit">Join with code</button>
         </form>
       </div>
       <p id="menu-error" class="error" role="alert"></p>
@@ -109,6 +116,10 @@
       <div class="game-actions">
         <button id="undo-button" type="button">Undo</button>
         <button id="resign-button" class="secondary" type="button">Resign</button>
+        <label class="show-moves">
+          <input id="show-moves" type="checkbox" checked>
+          Show valid moves
+        </label>
       </div>
     </section>
   </main>
@@ -122,8 +133,10 @@
       Every trapped disc flips.</p>
     <p>If you have no legal move, your turn passes. The game ends when neither
       player can move. The player with more discs wins.</p>
+    <p>Show valid moves marks every square you can play. Turn it off to hide
+      those marks. The squares stay playable either way.</p>
   </dialog>
 
-  <script src="/app.js?v=2" defer></script>
+  <script src="/app.js?v=4" defer></script>
 </body>
 </html>

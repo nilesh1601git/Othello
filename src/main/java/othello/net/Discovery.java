@@ -8,6 +8,9 @@ import java.net.InetSocketAddress;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 /**
@@ -22,6 +25,7 @@ public final class Discovery implements AutoCloseable {
   private int tcpPort;
   private String name = "Player";
   private Thread loop;
+  private boolean web;
   private Consumer<Advertisement> onFound = advertisement -> {
   };
 
@@ -34,16 +38,11 @@ public final class Discovery implements AutoCloseable {
   }
 
   public void announce(int tcpPort, String hostName) throws IOException {
-    this.tcpPort = tcpPort;
-    this.name = Protocol.sanitizeName(hostName);
-    socket = new DatagramSocket(null);
-    socket.setReuseAddress(true);
-    socket.setBroadcast(true);
-    socket.bind(new InetSocketAddress(udpPort));
-    socket.setSoTimeout(400);
-    running = true;
-    loop = daemon("othello-announce", this::announceLoop);
-    loop.start();
+    startAnnounce(tcpPort, hostName, false);
+  }
+
+  public void announceWeb(int httpPort, String hostName) throws IOException {
+    startAnnounce(httpPort, hostName, true);
   }
 
   public void listen(Consumer<Advertisement> found) throws IOException {
@@ -55,12 +54,26 @@ public final class Discovery implements AutoCloseable {
     loop.start();
   }
 
+  /**
+   * Probe the LAN once and return unique advertisements heard within
+   * {@code durationMs}. Used by the web Join screen to find other hosts.
+   */
+  public static List<Advertisement> collect(int udpPort, int durationMs)
+      throws IOException, InterruptedException {
+    Map<String, Advertisement> unique = new ConcurrentHashMap<>();
+    try (Discovery discovery = new Discovery(udpPort)) {
+      discovery.listen(found -> unique.put(found.key(), found));
+      Thread.sleep(Math.max(400, durationMs));
+    }
+    return List.copyOf(unique.values());
+  }
+
   public static Advertisement parseAnnounce(String message, String sourceAddress) {
     if (message == null || sourceAddress == null) {
       return null;
     }
-    String[] parts = message.split("\\|", 4);
-    if (parts.length != 4 || !"OTHELLO".equals(parts[0]) || !"ANNOUNCE".equals(parts[1])) {
+    String[] parts = message.split("\\|", 6);
+    if (parts.length < 4 || !"OTHELLO".equals(parts[0]) || !"ANNOUNCE".equals(parts[1])) {
       return null;
     }
     try {
@@ -68,7 +81,10 @@ public final class Discovery implements AutoCloseable {
       if (port < 1 || port > 65535) {
         return null;
       }
-      return new Advertisement(sourceAddress, port, Protocol.sanitizeName(parts[3]));
+      boolean webHost = parts.length >= 5 && "WEB".equals(parts[4]);
+      String gameId = parts.length >= 6 ? parts[5].trim() : "";
+      return new Advertisement(
+          sourceAddress, port, Protocol.sanitizeName(parts[3]), webHost, gameId);
     } catch (NumberFormatException ex) {
       return null;
     }
@@ -170,8 +186,22 @@ public final class Discovery implements AutoCloseable {
     }
   }
 
+  private void startAnnounce(int port, String hostName, boolean webHost) throws IOException {
+    this.tcpPort = port;
+    this.name = Protocol.sanitizeName(hostName);
+    this.web = webHost;
+    socket = new DatagramSocket(null);
+    socket.setReuseAddress(true);
+    socket.setBroadcast(true);
+    socket.bind(new InetSocketAddress(udpPort));
+    socket.setSoTimeout(400);
+    running = true;
+    loop = daemon("othello-announce", this::announceLoop);
+    loop.start();
+  }
+
   private String announceText() {
-    return "OTHELLO|ANNOUNCE|" + tcpPort + "|" + name;
+    return "OTHELLO|ANNOUNCE|" + tcpPort + "|" + name + (web ? "|WEB" : "");
   }
 
   private static Thread daemon(String name, Runnable task) {
@@ -180,9 +210,23 @@ public final class Discovery implements AutoCloseable {
     return thread;
   }
 
-  public record Advertisement(String address, int port, String name) {
+  public record Advertisement(String address, int port, String name, boolean web, String gameId) {
+    public Advertisement {
+      if (gameId == null) {
+        gameId = "";
+      }
+    }
+
+    public Advertisement(String address, int port, String name) {
+      this(address, port, name, false, "");
+    }
+
     public String label() {
       return name + "   " + address + ":" + port;
+    }
+
+    public String key() {
+      return address + ":" + port + ":" + name + ":" + gameId;
     }
   }
 }

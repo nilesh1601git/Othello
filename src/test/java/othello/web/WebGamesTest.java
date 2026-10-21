@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import othello.web.WebGames.Access;
 import othello.web.WebGames.JoinGame;
 import othello.web.WebGames.MoveRequest;
@@ -45,6 +46,23 @@ class WebGamesTest {
     assertEquals("BLACK", guest.state().yourColor());
     assertTrue(guest.state().canMove());
     assertFalse(games.state(host.gameId(), host.token()).canMove());
+  }
+
+  @Test
+  void openLanGamesAppearUntilAGuestJoins() {
+    WebGames games = new WebGames();
+    Access host = games.create(new NewGame("lan", "Ada", "WHITE", "EASY"));
+    games.create(new NewGame("computer", "Bot", "BLACK", "EASY"));
+    games.create(new NewGame("hotseat", "Table", "BLACK", "EASY"));
+
+    List<WebGames.OpenGame> open = games.listOpen();
+    assertEquals(1, open.size());
+    assertEquals(host.gameId(), open.get(0).gameId());
+    assertEquals("Ada", open.get(0).hostName());
+    assertEquals("WHITE", open.get(0).hostColor());
+
+    games.join(host.gameId(), new JoinGame("Niels"));
+    assertTrue(games.listOpen().isEmpty());
   }
 
   @Test

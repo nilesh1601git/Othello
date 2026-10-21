@@ -38,6 +38,14 @@ public final class WebGames {
     return room.join(cleanName(request.name(), "Guest"), nextToken());
   }
 
+  public List<OpenGame> listOpen() {
+    List<OpenGame> open = new ArrayList<>();
+    for (Room room : rooms.values()) {
+      room.appendIfOpen(open);
+    }
+    return List.copyOf(open);
+  }
+
   public GameView state(String rawId, String token) {
     return room(rawId).view(requireToken(token));
   }
@@ -116,6 +124,9 @@ public final class WebGames {
   }
 
   public record JoinGame(String name) {
+  }
+
+  public record OpenGame(String gameId, String hostName, String hostColor, String origin) {
   }
 
   public record MoveRequest(int row, int col) {
@@ -208,6 +219,12 @@ public final class WebGames {
       }
       playComputer(computer);
       return List.of(view(creatorToken));
+    }
+
+    synchronized void appendIfOpen(List<OpenGame> open) {
+      if (mode == Mode.LAN && guestToken == null && !game.isFinished()) {
+        open.add(new OpenGame(id, creatorName, creatorColor.name(), ""));
+      }
     }
 
     synchronized Access join(String name, String token) {
@@ -343,7 +360,7 @@ public final class WebGames {
 
     private String status(Disc player) {
       if (isWaiting()) {
-        return "Share game code " + id + " with the other player.";
+        return "Your game is on the Join list as " + id + ".";
       }
       if (game.endReason() != null) {
         return game.endReason();

@@ -1,6 +1,7 @@
 package othello;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -58,6 +59,23 @@ class LanMatchTest {
       guest.close();
       host.close();
     }
+  }
+
+  @Test
+  void parseAnnounceReadsWebHosts() {
+    Discovery.Advertisement web = Discovery.parseAnnounce(
+        "OTHELLO|ANNOUNCE|8080|Ada|WEB", "192.168.1.20");
+    assertNotNull(web);
+    assertTrue(web.web());
+    assertEquals(8080, web.port());
+    assertEquals("Ada", web.name());
+    assertEquals("192.168.1.20", web.address());
+
+    Discovery.Advertisement desktop = Discovery.parseAnnounce(
+        "OTHELLO|ANNOUNCE|47820|Ada", "192.168.1.20");
+    assertNotNull(desktop);
+    assertFalse(desktop.web());
+    assertEquals(47820, desktop.port());
   }
 
   @Test

@@ -15,6 +15,7 @@ import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.List;
+import java.util.prefs.Preferences;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -22,6 +23,7 @@ import javax.swing.ButtonGroup;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
@@ -64,6 +66,7 @@ public final class OthelloFrame extends JFrame {
   private final JButton undoButton = Widgets.button("Undo");
   private final JButton resignButton = Widgets.button("Resign");
   private final JButton newGameButton = Widgets.button("New game");
+  private final JCheckBox showMovesBox = new JCheckBox("Show valid moves", true);
   private final DefaultListModel<Discovery.Advertisement> foundGames = new DefaultListModel<>();
 
   private JComboBox<Difficulty> difficultyBox;
@@ -80,6 +83,7 @@ public final class OthelloFrame extends JFrame {
   private JTextField joinAddressField;
   private JTextField joinPortField;
   private JList<Discovery.Advertisement> joinList;
+  private JLabel joinScanStatus;
 
   private Game game = new Game();
   private Mode mode = Mode.HOTSEAT;
@@ -257,14 +261,19 @@ public final class OthelloFrame extends JFrame {
     panel.add(Box.createVerticalStrut(24));
     panel.add(Widgets.title("Join"));
     panel.add(Box.createVerticalStrut(8));
-    panel.add(Widgets.muted("Games on this network appear below. You can also type an address."));
+    panel.add(Widgets.muted("Scan this network for a hosted game, or type an address."));
     panel.add(Box.createVerticalStrut(12));
     panel.add(labeled("Your name", joinNameField));
+    panel.add(Box.createVerticalStrut(8));
+    joinScanStatus = Widgets.muted("Scanning this network…");
+    panel.add(joinScanStatus);
     panel.add(Box.createVerticalStrut(8));
     JScrollPane scroll = new JScrollPane(joinList);
     scroll.setPreferredSize(new Dimension(460, 160));
     scroll.getViewport().setBackground(Theme.FIELD);
     panel.add(scroll);
+    panel.add(Box.createVerticalStrut(8));
+    panel.add(menuButton("Scan network", this::startBrowsing));
     panel.add(Box.createVerticalStrut(8));
     panel.add(menuButton("Join selected game", this::joinSelected));
     panel.add(Box.createVerticalStrut(12));
@@ -314,6 +323,12 @@ public final class OthelloFrame extends JFrame {
     undoButton.addActionListener(event -> onUndo());
     resignButton.addActionListener(event -> onResign());
     newGameButton.addActionListener(event -> onNewGame());
+    showMovesBox.setSelected(loadShowValidMoves());
+    styleCheck(showMovesBox);
+    showMovesBox.addActionListener(event -> {
+      storeShowValidMoves(showMovesBox.isSelected());
+      refresh();
+    });
     JButton menu = Widgets.button("Main menu");
     menu.addActionListener(event -> backToMenu());
 
@@ -322,6 +337,7 @@ public final class OthelloFrame extends JFrame {
     actions.add(newGameButton);
     actions.add(undoButton);
     actions.add(resignButton);
+    actions.add(showMovesBox);
     actions.add(menu);
 
     JPanel panel = new JPanel(new BorderLayout());
@@ -414,10 +430,16 @@ public final class OthelloFrame extends JFrame {
   private void startBrowsing() {
     foundGames.clear();
     shutdownBrowser();
+    if (joinScanStatus != null) {
+      joinScanStatus.setText("Scanning this network…");
+    }
     browser = new Discovery();
     try {
       browser.listen(found -> ui(() -> remember(found)));
     } catch (Exception ex) {
+      if (joinScanStatus != null) {
+        joinScanStatus.setText("LAN discovery is unavailable. Type the host address instead.");
+      }
       JOptionPane.showMessageDialog(this,
           "LAN discovery is unavailable. Type the host address instead.");
     }
@@ -428,10 +450,12 @@ public final class OthelloFrame extends JFrame {
       Discovery.Advertisement existing = foundGames.get(index);
       if (existing.address().equals(advertisement.address()) && existing.port() == advertisement.port()) {
         foundGames.set(index, advertisement);
+        joinScanStatus.setText("Found " + foundGames.size() + " hosted game(s).");
         return;
       }
     }
     foundGames.addElement(advertisement);
+    joinScanStatus.setText("Found " + foundGames.size() + " hosted game(s).");
   }
 
   private void joinSelected() {
@@ -635,17 +659,10 @@ public final class OthelloFrame extends JFrame {
     whiteCard.setBorder(activeBorder(whiteActive));
     status.setText(statusText());
     meta.setText(metaText());
-    Disc hints = Disc.EMPTY;
-    boolean canClick = false;
-    if (!game.isFinished() && !thinking) {
-      if (mode == Mode.HOTSEAT) {
-        hints = game.turn();
-        canClick = true;
-      } else if (game.turn() == humanDisc) {
-        hints = humanDisc;
-        canClick = true;
-      }
-    }
+    boolean canClick = !game.isFinished() && !thinking
+        && (mode == Mode.HOTSEAT || game.turn() == humanDisc);
+    Disc hints = hintsFor(showMovesBox.isSelected(), game.isFinished(), thinking,
+        mode == Mode.HOTSEAT, game.turn(), humanDisc);
     boardPanel.show(game.boardCopy(), game.lastRow(), game.lastCol(), hints, canClick);
     undoButton.setVisible(mode != Mode.LAN);
     newGameButton.setVisible(mode != Mode.LAN);
@@ -731,12 +748,16 @@ public final class OthelloFrame extends JFrame {
         If you have no legal move, you pass. The game ends when neither player
         can move. The higher disc count wins.
 
+        Show valid moves marks every square you can play. Turn it off to hide
+        those marks. The squares stay playable either way.
+
         Play vs Computer uses Easy, Medium, or Hard search.
         Two players on this device take turns at the same screen.
-        For a LAN game, one person hosts and the other joins. Both devices need
-        this program and must be on the same network. Discovery uses UDP port
-        47821. The game itself uses TCP port 47820 unless you change it.
-        If a game does not appear in the list, type the address shown on the host.
+        For a LAN game, one person hosts and the other chooses Join, then Scan
+        network. Both devices need this program and must be on the same network.
+        Discovery uses UDP port 47821. The game itself uses TCP port 47820 unless
+        you change it. If a game does not appear in the list, type the address
+        shown on the host.
         """);
     text.setEditable(false);
     text.setFont(Theme.ui(15));
@@ -879,6 +900,44 @@ public final class OthelloFrame extends JFrame {
     radio.setOpaque(false);
     radio.setForeground(Theme.TEXT);
     radio.setFont(Theme.ui(15));
+  }
+
+  private void styleCheck(JCheckBox box) {
+    box.setOpaque(false);
+    box.setForeground(Theme.TEXT);
+    box.setFont(Theme.ui(15));
+    box.setFocusPainted(false);
+  }
+
+  /**
+   * Marks the side about to move when the player has asked to see valid moves,
+   * and only on a turn that player can take.
+   */
+  static Disc hintsFor(boolean showValidMoves, boolean finished, boolean thinking,
+      boolean hotseat, Disc turn, Disc humanDisc) {
+    if (!showValidMoves || finished || thinking || turn == null) {
+      return Disc.EMPTY;
+    }
+    if (hotseat || turn == humanDisc) {
+      return turn;
+    }
+    return Disc.EMPTY;
+  }
+
+  private static boolean loadShowValidMoves() {
+    try {
+      return Preferences.userNodeForPackage(OthelloFrame.class).getBoolean("showValidMoves", true);
+    } catch (SecurityException ignored) {
+      return true;
+    }
+  }
+
+  private static void storeShowValidMoves(boolean show) {
+    try {
+      Preferences.userNodeForPackage(OthelloFrame.class).putBoolean("showValidMoves", show);
+    } catch (SecurityException ignored) {
+      // The checkbox still applies for this session.
+    }
   }
 
   private static BufferedImage icon() {
