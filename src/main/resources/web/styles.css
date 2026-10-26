@@ -54,6 +54,18 @@ h1 {
 }
 .hero > p:last-child { color: var(--muted); }
 
+.profile-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: center;
+  gap: 12px;
+  max-width: 900px;
+  margin: 0 auto 22px;
+}
+.profile-bar label { min-width: min(280px, 100%); }
+.profile-bar button { width: auto; }
+
 .menu-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -130,7 +142,56 @@ button.secondary { color: var(--cream); border-color: #4a5d55; background: var(-
   background: transparent;
   font-weight: 700;
 }
-#rules-button { display: block; margin: 24px auto 0; }
+#rules-button { display: block; margin: 18px auto 0; }
+
+.history-panel {
+  max-width: 900px;
+  margin: 22px auto 0;
+  padding: 22px 24px;
+  border: 1px solid #31453c;
+  border-radius: 20px;
+  background: linear-gradient(145deg, #1b2822, var(--panel));
+}
+.history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.history-head h2 { margin: 0; color: var(--gold); font-size: 1.7rem; }
+.history-list {
+  display: grid;
+  gap: 10px;
+  max-height: 320px;
+  margin: 16px 0 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.history-item, .history-empty {
+  padding: 12px 14px;
+  border: 1px solid #3b5147;
+  border-radius: 12px;
+  background: #0e1713;
+}
+.history-item { display: grid; gap: 2px; }
+.history-item strong { color: var(--cream); }
+.history-item span, .history-empty { color: var(--muted); font-size: .9rem; }
+.stack { display: grid; gap: 12px; }
+.result-score {
+  margin: 4px 0 0;
+  font: 700 clamp(2.4rem, 8vw, 3.4rem) Georgia, serif;
+  text-align: center;
+}
+#result-dialog { text-align: center; }
+#result-dialog h2 { margin: 0; font-size: clamp(2rem, 6vw, 2.6rem); }
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
+}
 .error { min-height: 1.4em; margin: 14px 0 0; color: var(--danger); text-align: center; }
 .code-input { text-transform: uppercase; letter-spacing: .18em; font-weight: 800; }
 
@@ -345,6 +406,7 @@ dialog::backdrop { background: #050806d9; }
 @media (max-width: 720px) {
   .menu-grid { grid-template-columns: 1fr; }
   .card { min-height: 260px; }
+  .history-head { align-items: flex-start; flex-direction: column; }
   .score-strip { gap: 7px; }
   .score { width: auto; padding: 8px; }
   .score strong, .score small { display: none; }

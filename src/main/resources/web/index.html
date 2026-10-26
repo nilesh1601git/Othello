@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101614">
   <title>Othello</title>
-  <link rel="stylesheet" href="/styles.css?v=4">
+  <link rel="stylesheet" href="/styles.css?v=5">
 </head>
 <body>
   <main class="shell">
@@ -16,12 +16,19 @@
         <p>Outflank a line. Flip the discs. Control the board.</p>
       </header>
 
+      <div class="profile-bar">
+        <label>Playing as
+          <select id="user-select"></select>
+        </label>
+        <button id="new-user-button" type="button">New user</button>
+      </div>
+
       <div class="menu-grid">
         <form id="computer-form" class="card">
           <span class="card-number">01</span>
           <h2>Play the computer</h2>
           <p>Choose your side and search difficulty.</p>
-          <label>Name <input name="name" value="You" maxlength="24"></label>
+          <label>Name <input name="name" data-player-name value="You" maxlength="24"></label>
           <div class="row">
             <label>Side
               <select name="color">
@@ -51,7 +58,7 @@
           <span class="card-number">03</span>
           <h2>Host a LAN game</h2>
           <p>Start a game. The other player can scan this network and join it.</p>
-          <label>Name <input name="name" value="Host" maxlength="24"></label>
+          <label>Name <input name="name" data-player-name value="Host" maxlength="24"></label>
           <label>Side
             <select name="color">
               <option value="BLACK">Black · first</option>
@@ -65,7 +72,7 @@
           <span class="card-number">04</span>
           <h2>Join a LAN game</h2>
           <p>Scan this network for a hosted game, or enter the host's code.</p>
-          <label>Name <input id="join-name" name="name" value="Guest" maxlength="24"></label>
+          <label>Name <input id="join-name" name="name" data-player-name value="Guest" maxlength="24"></label>
           <div class="lan-scan">
             <div class="lan-scan-head">
               <span id="scan-status">Looking for hosted games…</span>
@@ -81,6 +88,17 @@
         </form>
       </div>
       <p id="menu-error" class="error" role="alert"></p>
+
+      <section class="history-panel" aria-labelledby="history-heading">
+        <div class="history-head">
+          <h2 id="history-heading">Score history</h2>
+          <label class="show-moves">
+            <input id="history-mine" type="checkbox" checked>
+            Only my games
+          </label>
+        </div>
+        <ul id="history-list" class="history-list"></ul>
+      </section>
       <button id="rules-button" class="text-button" type="button">How to play</button>
     </section>
 
@@ -124,6 +142,28 @@
     </section>
   </main>
 
+  <dialog id="result-dialog" aria-labelledby="result-title">
+    <p class="eyebrow" id="result-kicker">Game over</p>
+    <h2 id="result-title">Game over</h2>
+    <p id="result-score" class="result-score">0–0</p>
+    <p id="result-detail"></p>
+    <div class="result-actions">
+      <button id="result-close" type="button">Keep board</button>
+      <button id="result-menu" class="secondary" type="button">Main menu</button>
+    </div>
+  </dialog>
+
+  <dialog id="user-dialog">
+    <button id="close-user" class="dialog-close" type="button" aria-label="Close">×</button>
+    <p class="eyebrow">Players</p>
+    <h2>New user</h2>
+    <form id="user-form" class="stack">
+      <label>Name <input id="user-name" name="name" maxlength="24" required autocomplete="off"></label>
+      <p id="user-error" class="error" role="alert"></p>
+      <button type="submit">Create user</button>
+    </form>
+  </dialog>
+
   <dialog id="rules-dialog">
     <button id="close-rules" class="dialog-close" type="button" aria-label="Close">×</button>
     <p class="eyebrow">Rules</p>
@@ -137,6 +177,6 @@
       those marks. The squares stay playable either way.</p>
   </dialog>
 
-  <script src="/app.js?v=4" defer></script>
+  <script src="/app.js?v=5" defer></script>
 </body>
 </html>

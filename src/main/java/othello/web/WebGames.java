@@ -13,29 +13,54 @@ import othello.model.Disc;
 import othello.model.Game;
 import othello.model.Move;
 import othello.net.Protocol;
+import othello.score.ScoreBook;
 
 public final class WebGames {
   private static final String CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   private final SecureRandom random = new SecureRandom();
   private final ComputerPlayer computer = new ComputerPlayer();
   private final Map<String, Room> rooms = new ConcurrentHashMap<>();
+  private final ScoreBook scores;
+
+  public WebGames() {
+    this(ScoreBook.inMemory());
+  }
+
+  public WebGames(ScoreBook scores) {
+    this.scores = scores == null ? ScoreBook.inMemory() : scores;
+  }
+
+  public ScoreBook scores() {
+    return scores;
+  }
 
   public Access create(NewGame request) {
+    return create(request, "");
+  }
+
+  public Access create(NewGame request, String userId) {
     Mode mode = Mode.parse(request.mode());
-    String creatorName = cleanName(request.name(), "Player");
+    String creatorUserId = knownUser(userId);
+    String creatorName = nameForUser(creatorUserId, request.name(), "Player");
     Disc creatorColor = parseColor(request.color());
     Difficulty difficulty = parseDifficulty(request.difficulty());
     String id = nextCode();
     String token = nextToken();
-    Room room = new Room(id, mode, difficulty, creatorColor, creatorName, token);
+    Room room = new Room(
+        scores, id, mode, difficulty, creatorColor, creatorName, creatorUserId, token);
     rooms.put(id, room);
     List<GameView> frames = room.openingComputerMove(computer);
     return new Access(id, token, room.view(token), frames);
   }
 
   public Access join(String rawId, JoinGame request) {
+    return join(rawId, request, "");
+  }
+
+  public Access join(String rawId, JoinGame request, String userId) {
     Room room = room(rawId);
-    return room.join(cleanName(request.name(), "Guest"), nextToken());
+    String guestUserId = knownUser(userId);
+    return room.join(nameForUser(guestUserId, request.name(), "Guest"), guestUserId, nextToken());
   }
 
   public List<OpenGame> listOpen() {
@@ -98,6 +123,16 @@ public final class WebGames {
       throw new WebGameException(401, "This player link is not valid.");
     }
     return token;
+  }
+
+  private String knownUser(String userId) {
+    return scores.user(userId).map(ScoreBook.User::id).orElse("");
+  }
+
+  private String nameForUser(String userId, String requestedName, String fallback) {
+    return scores.user(userId)
+        .map(ScoreBook.User::name)
+        .orElseGet(() -> cleanName(requestedName, fallback));
   }
 
   private static String cleanName(String name, String fallback) {
@@ -193,23 +228,29 @@ public final class WebGames {
   }
 
   private static final class Room {
+    private final ScoreBook scores;
     private final String id;
     private final Mode mode;
     private final Difficulty difficulty;
     private final Disc creatorColor;
     private final String creatorName;
+    private final String creatorUserId;
     private final String creatorToken;
     private final Game game = new Game();
     private String guestName;
+    private String guestUserId = "";
     private String guestToken;
+    private boolean scoreCaptured;
 
-    Room(String id, Mode mode, Difficulty difficulty, Disc creatorColor,
-        String creatorName, String creatorToken) {
+    Room(ScoreBook scores, String id, Mode mode, Difficulty difficulty, Disc creatorColor,
+        String creatorName, String creatorUserId, String creatorToken) {
+      this.scores = scores;
       this.id = id;
       this.mode = mode;
       this.difficulty = difficulty;
       this.creatorColor = mode == Mode.HOTSEAT ? Disc.BLACK : creatorColor;
       this.creatorName = creatorName;
+      this.creatorUserId = creatorUserId == null ? "" : creatorUserId;
       this.creatorToken = creatorToken;
     }
 
@@ -218,6 +259,7 @@ public final class WebGames {
         return List.of();
       }
       playComputer(computer);
+      syncScore();
       return List.of(view(creatorToken));
     }
 
@@ -227,7 +269,7 @@ public final class WebGames {
       }
     }
 
-    synchronized Access join(String name, String token) {
+    synchronized Access join(String name, String userId, String token) {
       if (mode != Mode.LAN) {
         throw new WebGameException(409, "This is not a LAN game.");
       }
@@ -235,6 +277,7 @@ public final class WebGames {
         throw new WebGameException(409, "This game already has two players.");
       }
       guestName = name;
+      guestUserId = userId == null ? "" : userId;
       guestToken = token;
       return new Access(id, token, view(token), List.of());
     }
@@ -263,6 +306,7 @@ public final class WebGames {
         }
         frames.add(view(token));
       }
+      syncScore();
       return new MoveResult(view(token), List.copyOf(frames));
     }
 
@@ -280,6 +324,7 @@ public final class WebGames {
         game.undo();
         frames.add(view(token));
       }
+      syncScore();
       return new MoveResult(view(token), List.copyOf(frames));
     }
 
@@ -290,6 +335,7 @@ public final class WebGames {
         String winner = nameFor(player.opponent());
         game.finish(loser + " resigned. " + winner + " wins.");
       }
+      syncScore();
       return view(token);
     }
 
@@ -358,6 +404,42 @@ public final class WebGames {
       return mode == Mode.LAN && guestToken == null;
     }
 
+    private void syncScore() {
+      if (!game.isFinished()) {
+        if (scoreCaptured) {
+          scores.forget(id);
+          scoreCaptured = false;
+        }
+        return;
+      }
+      if (scoreCaptured || !ScoreBook.isScored(game.endReason())) {
+        return;
+      }
+      String recordedBy = mode == Mode.HOTSEAT ? creatorUserId : "";
+      scores.remember(
+          id,
+          mode.name().toLowerCase(Locale.ROOT),
+          nameFor(Disc.BLACK),
+          nameFor(Disc.WHITE),
+          userFor(Disc.BLACK),
+          userFor(Disc.WHITE),
+          recordedBy,
+          game.count(Disc.BLACK),
+          game.count(Disc.WHITE),
+          game.endReason());
+      scoreCaptured = true;
+    }
+
+    private String userFor(Disc color) {
+      if (mode == Mode.HOTSEAT) {
+        return "";
+      }
+      if (mode == Mode.COMPUTER) {
+        return color == creatorColor ? creatorUserId : "";
+      }
+      return color == creatorColor ? creatorUserId : guestUserId;
+    }
+
     private String status(Disc player) {
       if (isWaiting()) {
         return "Your game is on the Join list as " + id + ".";
@@ -366,14 +448,12 @@ public final class WebGames {
         return game.endReason();
       }
       if (game.isFinished()) {
-        int black = game.count(Disc.BLACK);
-        int white = game.count(Disc.WHITE);
-        if (black == white) {
-          return "Draw, " + black + " each.";
-        }
-        Disc winner = black > white ? Disc.BLACK : Disc.WHITE;
-        return nameFor(winner) + " wins, " + Math.max(black, white)
-            + " to " + Math.min(black, white) + ".";
+        return ScoreBook.summary(
+            game.endReason(),
+            nameFor(Disc.BLACK),
+            nameFor(Disc.WHITE),
+            game.count(Disc.BLACK),
+            game.count(Disc.WHITE));
       }
       String pass = game.opponentPassed() ? "The other player had no legal move. " : "";
       if (mode == Mode.HOTSEAT) {

@@ -1,6 +1,9 @@
 package othello.ui;
 
 import java.awt.BorderLayout;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.awt.CardLayout;
 import java.awt.Component;
 import java.awt.Dimension;
@@ -15,6 +18,7 @@ import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.List;
+import java.util.Locale;
 import java.util.prefs.Preferences;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -49,6 +53,10 @@ import othello.net.MatchGuest;
 import othello.net.MatchHost;
 import othello.net.MatchListener;
 import othello.net.Protocol;
+import othello.score.ScoreBook;
+import othello.score.ScoreBook.Score;
+import othello.score.ScoreBook.ScoreBookException;
+import othello.score.ScoreBook.User;
 
 public final class OthelloFrame extends JFrame {
   private final CardLayout cards = new CardLayout();
@@ -68,8 +76,12 @@ public final class OthelloFrame extends JFrame {
   private final JButton newGameButton = Widgets.button("New game");
   private final JCheckBox showMovesBox = new JCheckBox("Show valid moves", true);
   private final DefaultListModel<Discovery.Advertisement> foundGames = new DefaultListModel<>();
+  private final ScoreBook scores = ScoreBook.open(ScoreBook.defaultPath());
+  private final DateTimeFormatter scoreTime = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
   private JComboBox<Difficulty> difficultyBox;
+  private JComboBox<User> userBox;
+  private boolean loadingUsers;
   private JComboBox<String> colorBox;
   private JTextField hostNameField;
   private JTextField hostPortField;
@@ -92,6 +104,12 @@ public final class OthelloFrame extends JFrame {
   private String blackName = "Black";
   private String whiteName = "White";
   private String localName = "You";
+  private String scoreGameId = "";
+  private String blackUserId = "";
+  private String whiteUserId = "";
+  private String recordedBy = "";
+  private boolean scoreSaved;
+  private boolean resultShown;
   private boolean thinking;
   private int session;
   private boolean disposed;
@@ -112,6 +130,7 @@ public final class OthelloFrame extends JFrame {
     root.add(joinPanel(), "join");
     root.add(gamePanel(), "game");
     setContentPane(root);
+    applySelectedUser();
     addWindowListener(new WindowAdapter() {
       @Override
       public void windowClosing(WindowEvent event) {
@@ -136,7 +155,38 @@ public final class OthelloFrame extends JFrame {
     panel.add(Widgets.title("OTHELLO"));
     panel.add(Box.createVerticalStrut(8));
     panel.add(Widgets.muted("Outflank a line of discs, then flip them."));
-    panel.add(Box.createVerticalStrut(28));
+    panel.add(Box.createVerticalStrut(16));
+    userBox = new JComboBox<>();
+    styleCombo(userBox);
+    userBox.setPreferredSize(new Dimension(180, 36));
+    userBox.setRenderer(new DefaultListCellRenderer() {
+      @Override
+      public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+          boolean selected, boolean focus) {
+        super.getListCellRendererComponent(list, value, index, selected, focus);
+        setText(value instanceof User user ? user.name() : "Guest");
+        setBackground(selected ? Theme.BUTTON_HOVER : Theme.FIELD);
+        setForeground(Theme.TEXT);
+        return this;
+      }
+    });
+    reloadUsers();
+    userBox.addActionListener(event -> {
+      if (loadingUsers) {
+        return;
+      }
+      storeSelectedUser();
+      applySelectedUser();
+    });
+    panel.add(labeled("Playing as", userBox));
+    panel.add(Box.createVerticalStrut(8));
+    JPanel userActions = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 0));
+    Widgets.dark(userActions);
+    userActions.setMaximumSize(new Dimension(640, 64));
+    userActions.add(menuButton("New user", this::createUser));
+    userActions.add(menuButton("Score history", this::showScoreHistory));
+    panel.add(userActions);
+    panel.add(Box.createVerticalStrut(18));
     panel.add(menuButton("Play vs Computer", this::startComputer));
     panel.add(Box.createVerticalStrut(10));
     panel.add(optionRow("Difficulty", difficultyBox, "You play", colorBox));
@@ -351,7 +401,12 @@ public final class OthelloFrame extends JFrame {
   private void startComputer() {
     difficulty = (Difficulty) difficultyBox.getSelectedItem();
     boolean playBlack = colorBox.getSelectedIndex() == 0;
-    beginLocal(Mode.COMPUTER, playBlack ? Disc.BLACK : Disc.WHITE, "You", "Computer");
+    String name = selectedUser() == null ? "You" : selectedUser().name();
+    if (playBlack) {
+      beginLocal(Mode.COMPUTER, Disc.BLACK, name, "Computer");
+    } else {
+      beginLocal(Mode.COMPUTER, Disc.WHITE, "Computer", name);
+    }
   }
 
   private void startHotseat() {
@@ -364,6 +419,7 @@ public final class OthelloFrame extends JFrame {
     humanDisc = you;
     blackName = black;
     whiteName = white;
+    assignPlayers(nextMode, you);
     game = new Game();
     thinking = false;
     session++;
@@ -515,6 +571,12 @@ public final class OthelloFrame extends JFrame {
     }
     thinking = false;
     session++;
+    openScoreSlot();
+    if (yourColor == Disc.BLACK) {
+      blackUserId = selectedUserId();
+    } else {
+      whiteUserId = selectedUserId();
+    }
     game = position;
     boardPanel.snap();
     showCard("game");
@@ -620,7 +682,9 @@ public final class OthelloFrame extends JFrame {
       return;
     }
     if (mode == Mode.COMPUTER) {
-      game.finish("You resigned. Computer wins.");
+      String mine = humanDisc == Disc.BLACK ? blackName : whiteName;
+      String opponent = humanDisc == Disc.BLACK ? whiteName : blackName;
+      game.finish(mine + " resigned. " + opponent + " wins.");
       session++;
       refresh();
       return;
@@ -640,6 +704,7 @@ public final class OthelloFrame extends JFrame {
     }
     session++;
     thinking = false;
+    assignPlayers(mode, humanDisc);
     game = new Game();
     boardPanel.snap();
     if (!maybeThink()) {
@@ -669,6 +734,7 @@ public final class OthelloFrame extends JFrame {
     resignButton.setVisible(mode != Mode.HOTSEAT);
     undoButton.setEnabled(game.canUndo() && !thinking);
     resignButton.setEnabled(!game.isFinished() && !thinking);
+    announceIfFinished();
   }
 
   private String statusText() {
@@ -955,6 +1021,187 @@ public final class OthelloFrame extends JFrame {
     g.fillOval(8, 34, 22, 22);
     g.dispose();
     return image;
+  }
+
+  private void reloadUsers() {
+    if (userBox == null) {
+      return;
+    }
+    loadingUsers = true;
+    String selected = storedUserId();
+    userBox.removeAllItems();
+    userBox.addItem(null);
+    for (User user : scores.users()) {
+      userBox.addItem(user);
+      if (user.id().equals(selected)) {
+        userBox.setSelectedItem(user);
+      }
+    }
+    loadingUsers = false;
+    applySelectedUser();
+  }
+
+  private void createUser() {
+    String name = JOptionPane.showInputDialog(
+        this, "Name for the new user:", "New user", JOptionPane.QUESTION_MESSAGE);
+    if (name == null) {
+      return;
+    }
+    try {
+      User created = scores.createUser(name);
+      storeUserId(created.id());
+      reloadUsers();
+    } catch (ScoreBookException ex) {
+      JOptionPane.showMessageDialog(this, ex.getMessage());
+    }
+  }
+
+  private void showScoreHistory() {
+    User user = selectedUser();
+    List<Score> rows = scores.history(user == null ? "" : user.id());
+    StringBuilder text = new StringBuilder();
+    if (rows.isEmpty()) {
+      text.append(user == null ? "No finished games yet." : "No finished games for this user yet.");
+    } else {
+      for (Score score : rows) {
+        text.append(scoreTime.format(Instant.ofEpochMilli(score.playedAt()).atZone(ZoneId.systemDefault())))
+            .append("  ")
+            .append(modeLabel(score.mode()))
+            .append("  ")
+            .append(score.summary())
+            .append('\n');
+      }
+    }
+    JTextArea area = new JTextArea(text.toString().trim());
+    area.setEditable(false);
+    area.setFont(Theme.ui(15));
+    area.setBackground(Theme.PANEL);
+    area.setForeground(Theme.TEXT);
+    area.setBorder(new EmptyBorder(8, 8, 8, 8));
+    JScrollPane scroll = new JScrollPane(area);
+    scroll.setPreferredSize(new Dimension(480, 280));
+    String title = user == null ? "Score history" : "Score history · " + user.name();
+    JOptionPane.showMessageDialog(this, scroll, title, JOptionPane.INFORMATION_MESSAGE);
+  }
+
+  private void assignPlayers(Mode nextMode, Disc you) {
+    openScoreSlot();
+    String userId = selectedUserId();
+    if (nextMode == Mode.HOTSEAT) {
+      recordedBy = userId;
+      return;
+    }
+    if (nextMode == Mode.COMPUTER) {
+      if (you == Disc.BLACK) {
+        blackUserId = userId;
+      } else {
+        whiteUserId = userId;
+      }
+    }
+  }
+
+  private void openScoreSlot() {
+    scoreSaved = false;
+    resultShown = false;
+    scoreGameId = scores.newGameId();
+    blackUserId = "";
+    whiteUserId = "";
+    recordedBy = "";
+  }
+
+  private void announceIfFinished() {
+    if (thinking || game == null) {
+      return;
+    }
+    if (!game.isFinished()) {
+      if (scoreSaved) {
+        scores.forget(scoreGameId);
+        scoreSaved = false;
+      }
+      resultShown = false;
+      return;
+    }
+    if (!ScoreBook.isScored(game.endReason()) || resultShown) {
+      return;
+    }
+    resultShown = true;
+    scores.remember(
+        scoreGameId,
+        mode.name().toLowerCase(Locale.ROOT),
+        blackName,
+        whiteName,
+        blackUserId,
+        whiteUserId,
+        recordedBy,
+        game.count(Disc.BLACK),
+        game.count(Disc.WHITE),
+        game.endReason());
+    scoreSaved = true;
+    String message = ScoreBook.summary(
+        game.endReason(), blackName, whiteName, game.count(Disc.BLACK), game.count(Disc.WHITE))
+        + "\n\nSaved in score history.";
+    SwingUtilities.invokeLater(() -> {
+      if (!disposed) {
+        JOptionPane.showMessageDialog(this, message, "Game over", JOptionPane.INFORMATION_MESSAGE);
+      }
+    });
+  }
+
+  private void applySelectedUser() {
+    User user = selectedUser();
+    if (hostNameField != null) {
+      hostNameField.setEnabled(user == null);
+      if (user != null) {
+        hostNameField.setText(user.name());
+      }
+    }
+    if (joinNameField != null) {
+      joinNameField.setEnabled(user == null);
+      if (user != null) {
+        joinNameField.setText(user.name());
+      }
+    }
+  }
+
+  private User selectedUser() {
+    if (userBox == null || !(userBox.getSelectedItem() instanceof User user)) {
+      return null;
+    }
+    return user;
+  }
+
+  private String selectedUserId() {
+    User user = selectedUser();
+    return user == null ? "" : user.id();
+  }
+
+  private void storeSelectedUser() {
+    storeUserId(selectedUserId());
+  }
+
+  private void storeUserId(String id) {
+    try {
+      Preferences.userNodeForPackage(OthelloFrame.class).put("userId", id == null ? "" : id);
+    } catch (SecurityException ignored) {
+      // The choice still applies for this session.
+    }
+  }
+
+  private String storedUserId() {
+    try {
+      return Preferences.userNodeForPackage(OthelloFrame.class).get("userId", "");
+    } catch (SecurityException ignored) {
+      return "";
+    }
+  }
+
+  private static String modeLabel(String mode) {
+    return switch (mode) {
+      case "computer" -> "Computer";
+      case "hotseat" -> "This screen";
+      case "lan" -> "LAN";
+      default -> mode == null || mode.isBlank() ? "Game" : mode;
+    };
   }
 
   private enum Mode {

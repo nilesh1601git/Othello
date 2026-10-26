@@ -40,6 +40,8 @@ In a headless environment, the application starts the web interface automaticall
 
 **Show valid moves**, on the game screen, marks every square the player to move can play. Turn it off to hide the marks. Those squares stay playable either way. The choice is remembered.
 
+Choose **Playing as** and **New user** to keep a name. Guest still works without an account. When a game ends, a popup names the winner and the score. Finished games stay in **Score history**, including after a restart. The web menu lists them under the game modes, with **Only my games** for the selected user. The desktop **Score history** button opens the same record for the selected user, or every saved game when Guest is selected. Both interfaces share `~/.othello/scores.txt`. Undoing the last move of a finished game removes that result. A disconnected LAN game is not recorded.
+
 The desktop LAN game listens on TCP port **47820** unless you change it. Finding
 desktop games uses UDP port **47821**. The web interface uses HTTP port **8080**
 by default. The server's board is authoritative in both LAN modes.

@@ -11,6 +11,8 @@ import java.util.Map;
 import othello.net.Addresses;
 import othello.net.Discovery;
 import othello.net.Protocol;
+import othello.score.ScoreBook;
+import othello.score.ScoreBook.ScoreBookException;
 import othello.web.WebGames.Access;
 import othello.web.WebGames.JoinGame;
 import othello.web.WebGames.MoveRequest;
@@ -23,7 +25,8 @@ public final class WebApp {
   }
 
   public static Javalin start(int port) {
-    WebGames games = new WebGames();
+    ScoreBook scores = ScoreBook.open(ScoreBook.defaultPath());
+    WebGames games = new WebGames(scores);
     Presence presence = new Presence(port);
     Javalin app = Javalin.create(config -> {
       config.showJavalinBanner = false;
@@ -36,17 +39,25 @@ public final class WebApp {
     });
 
     app.get("/", context -> context.redirect("/index.html"));
+    app.get("/api/users", context -> context.json(new UsersResponse(scores.users())));
+    app.post("/api/users", context -> {
+      ScoreBook.User created = scores.createUser(context.bodyAsClass(NewUser.class).name());
+      context.status(HttpStatus.CREATED).json(created);
+    });
+    app.get("/api/scores", context ->
+        context.json(new ScoresResponse(scores.history(context.queryParam("user")))));
     app.get("/api/games", context ->
         context.json(new OpenGames(games.listOpen())));
     app.get("/api/lan/scan", context ->
         context.json(new OpenGames(scan(games, port))));
     app.post("/api/games", context -> {
-      Access created = games.create(context.bodyAsClass(NewGame.class));
+      Access created = games.create(context.bodyAsClass(NewGame.class), userId(context));
       presence.sync(games);
       context.status(HttpStatus.CREATED).json(created);
     });
     app.post("/api/games/{id}/join", context -> {
-      Access joined = games.join(context.pathParam("id"), context.bodyAsClass(JoinGame.class));
+      Access joined = games.join(
+          context.pathParam("id"), context.bodyAsClass(JoinGame.class), userId(context));
       presence.sync(games);
       context.json(joined);
     });
@@ -63,6 +74,8 @@ public final class WebApp {
     });
 
     app.exception(WebGameException.class, (error, context) ->
+        context.status(error.status()).json(new ErrorResponse(error.getMessage())));
+    app.exception(ScoreBookException.class, (error, context) ->
         context.status(error.status()).json(new ErrorResponse(error.getMessage())));
     app.exception(Exception.class, (error, context) -> {
       if (context.status().getCode() < 400) {
@@ -95,6 +108,20 @@ public final class WebApp {
   private static String token(io.javalin.http.Context context) {
     String token = context.header("X-Player-Token");
     return token == null ? "" : token;
+  }
+
+  private static String userId(io.javalin.http.Context context) {
+    String id = context.header("X-User-Id");
+    return id == null ? "" : id.trim();
+  }
+
+  private record NewUser(String name) {
+  }
+
+  private record UsersResponse(List<ScoreBook.User> users) {
+  }
+
+  private record ScoresResponse(List<ScoreBook.Score> scores) {
   }
 
   private record OpenGames(List<OpenGame> games) {

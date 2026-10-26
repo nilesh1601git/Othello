@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import othello.score.ScoreBook;
 import othello.web.WebGames.Access;
 import othello.web.WebGames.JoinGame;
 import othello.web.WebGames.MoveRequest;
@@ -63,6 +64,43 @@ class WebGamesTest {
 
     games.join(host.gameId(), new JoinGame("Niels"));
     assertTrue(games.listOpen().isEmpty());
+  }
+
+  @Test
+  void aFinishedGameIsSavedForItsUserAndRemovedOnUndo() {
+    ScoreBook book = ScoreBook.inMemory();
+    ScoreBook.User ada = book.createUser("Ada");
+    WebGames games = new WebGames(book);
+    Access access = games.create(new NewGame("hotseat", "Players", "BLACK", "EASY"), ada.id());
+    WebGames.GameView view = access.state();
+    int guard = 0;
+    while (!view.finished() && guard++ < 80) {
+      WebGames.MoveView move = view.legalMoves().get(0);
+      view = games.move(access.gameId(), access.token(), new MoveRequest(move.row(), move.col())).state();
+    }
+    assertTrue(view.finished());
+
+    assertEquals(1, book.history(ada.id()).size());
+    assertEquals("hotseat", book.history(ada.id()).get(0).mode());
+    games.undo(access.gameId(), access.token());
+    assertTrue(book.history(ada.id()).isEmpty());
+  }
+
+  @Test
+  void anAccountNameReplacesTheTypedNameAndResignationIsScored() {
+    ScoreBook book = ScoreBook.inMemory();
+    ScoreBook.User ada = book.createUser("Ada");
+    WebGames games = new WebGames(book);
+    Access access = games.create(new NewGame("computer", "Ignored", "BLACK", "EASY"), ada.id());
+
+    assertEquals("Ada", access.state().blackName());
+    assertEquals("Computer", access.state().whiteName());
+    WebGames.GameView finished = games.resign(access.gameId(), access.token());
+    assertTrue(finished.finished());
+    assertEquals("Ada resigned. Computer wins.", finished.status());
+    assertEquals(1, book.history(ada.id()).size());
+    assertEquals("WHITE", book.history(ada.id()).get(0).outcome());
+    assertTrue(book.history(ada.id()).get(0).summary().contains("Computer wins"));
   }
 
   @Test

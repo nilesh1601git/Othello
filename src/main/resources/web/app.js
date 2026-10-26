@@ -5,8 +5,10 @@ const menuError = document.querySelector("#menu-error");
 const gameError = document.querySelector("#game-error");
 const sessionKey = "othello-web-session";
 const movesKey = "othello-show-valid-moves";
+const userKey = "othello-user-id";
 
 let access = loadAccess();
+let announcedKey = "";
 let currentState = null;
 let displayedBoard = null;
 let pollTimer = null;
@@ -20,6 +22,7 @@ const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").match
 async function request(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (access?.token) headers["X-Player-Token"] = access.token;
+  if (selectedUserId()) headers["X-User-Id"] = selectedUserId();
   const response = await fetch(path, { ...options, headers });
   let payload;
   try {
@@ -45,6 +48,7 @@ async function createGame(settings) {
 }
 
 async function useAccess(next) {
+  closeResult();
   access = { gameId: next.gameId, token: next.token };
   localStorage.setItem(sessionKey, JSON.stringify(access));
   displayedBoard = null;
@@ -68,8 +72,10 @@ function showMenu() {
   localStorage.removeItem(sessionKey);
   gameScreen.classList.add("hidden");
   menuScreen.classList.remove("hidden");
+  closeResult();
   history.replaceState({}, "", location.pathname);
   watchHostedGames();
+  loadHistory();
 }
 
 function ensureBoard() {
@@ -162,6 +168,7 @@ async function present(state, frames) {
     animating = false;
     renderChrome(state);
     syncInteractions(state);
+    maybeAnnounce(state);
     return;
   }
   if (!displayedBoard) {
@@ -173,6 +180,7 @@ async function present(state, frames) {
       currentState = state;
       renderChrome(state);
       syncInteractions(state);
+      maybeAnnounce(state);
       return;
     }
     animating = true;
@@ -210,8 +218,70 @@ async function present(state, frames) {
       paintInstant(state.board, state);
       renderChrome(state);
       syncInteractions(state);
+      maybeAnnounce(state);
     }
   }
+}
+
+function maybeAnnounce(state) {
+  const dialog = document.querySelector("#result-dialog");
+  if (!state?.finished) {
+    announcedKey = "";
+    if (dialog?.open) dialog.close();
+    return;
+  }
+  const key = `${state.gameId}|${state.board}|${state.status}`;
+  if (key === announcedKey) return;
+  announcedKey = key;
+  const copy = describeResult(state);
+  document.querySelector("#result-kicker").textContent = copy.kicker;
+  document.querySelector("#result-title").textContent = copy.title;
+  document.querySelector("#result-score").textContent = copy.score;
+  document.querySelector("#result-detail").textContent = copy.detail;
+  if (!dialog.open) dialog.showModal();
+}
+
+function describeResult(state) {
+  const status = state.status || "Game over";
+  const resigned = status.match(/^(.*) resigned\. (.*) wins\.?$/);
+  if (resigned) {
+    return {
+      kicker: "Resignation",
+      title: `${resigned[2]} wins`,
+      score: `${state.blackCount}–${state.whiteCount}`,
+      detail: `${state.blackName} ${state.blackCount} · ${state.whiteName} ${state.whiteCount}. ${resigned[1]} resigned. Saved in score history.`
+    };
+  }
+  if (state.blackCount === state.whiteCount) {
+    const count = state.blackCount;
+    return {
+      kicker: "Game over",
+      title: "Draw",
+      score: `${count}–${count}`,
+      detail: `${state.blackName} and ${state.whiteName} each have ${count} discs. Saved in score history.`
+    };
+  }
+  const blackWins = state.blackCount > state.whiteCount;
+  const winner = blackWins ? state.blackName : state.whiteName;
+  const loser = blackWins ? state.whiteName : state.blackName;
+  const high = Math.max(state.blackCount, state.whiteCount);
+  const low = Math.min(state.blackCount, state.whiteCount);
+  return {
+    kicker: "Game over",
+    title: `${winner} wins`,
+    score: `${high}–${low}`,
+    detail: `${winner} ${high} · ${loser} ${low}. Saved in score history.`
+  };
+}
+
+function closeResult() {
+  const dialog = document.querySelector("#result-dialog");
+  if (dialog?.open) dialog.close();
+  announcedKey = "";
+}
+
+function selectedUserId() {
+  return document.querySelector("#user-select")?.value || "";
 }
 
 async function animateStep(before, frame) {
@@ -534,6 +604,137 @@ const rules = document.querySelector("#rules-dialog");
 document.querySelector("#rules-button").addEventListener("click", () => rules.showModal());
 document.querySelector("#close-rules").addEventListener("click", () => rules.close());
 
+const userDialog = document.querySelector("#user-dialog");
+document.querySelector("#new-user-button").addEventListener("click", () => {
+  document.querySelector("#user-error").textContent = "";
+  document.querySelector("#user-form").reset();
+  userDialog.showModal();
+  document.querySelector("#user-name").focus();
+});
+document.querySelector("#close-user").addEventListener("click", () => userDialog.close());
+document.querySelector("#user-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const name = new FormData(event.currentTarget).get("name");
+  document.querySelector("#user-error").textContent = "";
+  try {
+    const created = await request("/api/users", {
+      method: "POST",
+      body: JSON.stringify({ name })
+    });
+    localStorage.setItem(userKey, created.id);
+    userDialog.close();
+    await loadUsers();
+    await loadHistory();
+  } catch (error) {
+    document.querySelector("#user-error").textContent = error.message;
+  }
+});
+document.querySelector("#user-select").addEventListener("change", () => {
+  localStorage.setItem(userKey, selectedUserId());
+  applyUser();
+  loadHistory();
+});
+document.querySelector("#history-mine").addEventListener("change", () => loadHistory());
+document.querySelector("#result-close").addEventListener("click", () => {
+  document.querySelector("#result-dialog").close();
+});
+document.querySelector("#result-menu").addEventListener("click", () => {
+  document.querySelector("#result-dialog").close();
+  showMenu();
+});
+
+async function loadUsers() {
+  const select = document.querySelector("#user-select");
+  const saved = localStorage.getItem(userKey) || "";
+  let users = [];
+  try {
+    users = (await request("/api/users")).users || [];
+  } catch {
+    users = [];
+  }
+  select.replaceChildren();
+  const guest = document.createElement("option");
+  guest.value = "";
+  guest.textContent = "Guest";
+  select.append(guest);
+  for (const user of users) {
+    const option = document.createElement("option");
+    option.value = user.id;
+    option.textContent = user.name;
+    select.append(option);
+  }
+  select.value = [...select.options].some(option => option.value === saved) ? saved : "";
+  applyUser();
+}
+
+function applyUser() {
+  const select = document.querySelector("#user-select");
+  const name = select.value ? select.selectedOptions[0].textContent : "";
+  for (const input of document.querySelectorAll("[data-player-name]")) {
+    if (name) input.value = name;
+    input.readOnly = Boolean(name);
+  }
+  const mine = document.querySelector("#history-mine");
+  const hasUser = Boolean(select.value);
+  if (!hasUser) {
+    mine.checked = false;
+  } else if (mine.disabled) {
+    mine.checked = true;
+  }
+  mine.disabled = !hasUser;
+}
+
+async function loadHistory() {
+  const mine = document.querySelector("#history-mine");
+  const userId = selectedUserId();
+  const query = mine.checked && userId ? `?user=${encodeURIComponent(userId)}` : "";
+  let scores = [];
+  try {
+    scores = (await request(`/api/scores${query}`)).scores || [];
+  } catch {
+    scores = [];
+  }
+  renderHistory(document.querySelector("#history-list"), scores);
+}
+
+function renderHistory(list, scores) {
+  list.replaceChildren();
+  if (!scores.length) {
+    const empty = document.createElement("li");
+    empty.className = "history-empty";
+    empty.textContent = "No finished games yet.";
+    list.append(empty);
+    return;
+  }
+  for (const score of scores) {
+    const item = document.createElement("li");
+    item.className = "history-item";
+    const heading = document.createElement("strong");
+    heading.textContent = `${score.blackName} ${score.blackCount} – ${score.whiteName} ${score.whiteCount}`;
+    const result = document.createElement("span");
+    result.textContent = score.summary;
+    const meta = document.createElement("span");
+    meta.textContent = `${modeLabel(score.mode)} · ${formatWhen(score.playedAt)}`;
+    item.append(heading, result, meta);
+    list.append(item);
+  }
+}
+
+function modeLabel(mode) {
+  switch (mode) {
+    case "computer": return "Computer";
+    case "hotseat": return "This screen";
+    case "lan": return "LAN";
+    default: return mode ? title(mode) : "Game";
+  }
+}
+
+function formatWhen(epoch) {
+  const date = new Date(epoch);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
 function setMenuError(message) { menuError.textContent = message; }
 function setGameError(message) { gameError.textContent = message; }
 function title(value) {
@@ -549,18 +750,24 @@ function loadAccess() {
   }
 }
 
-watchHostedGames();
-const joinCode = new URLSearchParams(location.search).get("join");
-if (joinCode) {
-  document.querySelector("#join-code").value = joinCode.toUpperCase();
-  joinByCode(joinCode.toUpperCase(), document.querySelector("#join-name").value)
-    .finally(() => history.replaceState({}, "", location.pathname));
-} else if (access) {
-  refreshState().then(() => {
-    if (currentState) {
-      menuScreen.classList.add("hidden");
-      gameScreen.classList.remove("hidden");
-      restartPolling();
-    }
-  });
+async function start() {
+  await loadUsers();
+  await loadHistory();
+  watchHostedGames();
+  const joinCode = new URLSearchParams(location.search).get("join");
+  if (joinCode) {
+    document.querySelector("#join-code").value = joinCode.toUpperCase();
+    joinByCode(joinCode.toUpperCase(), document.querySelector("#join-name").value)
+      .finally(() => history.replaceState({}, "", location.pathname));
+  } else if (access) {
+    refreshState().then(() => {
+      if (currentState) {
+        menuScreen.classList.add("hidden");
+        gameScreen.classList.remove("hidden");
+        restartPolling();
+      }
+    });
+  }
 }
+
+start();
