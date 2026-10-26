@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HTML index</title>
+  <style>
+    :root { color-scheme: light; }
+    body {
+      margin: 0;
+      font: 16px/1.45 "Segoe UI", "Helvetica Neue", sans-serif;
+      color: #1c1915;
+      background: #f6f3ec;
+    }
+    main { max-width: 1100px; margin: 0 auto; padding: 32px 20px 48px; }
+    h1 { font-family: Georgia, serif; font-weight: 600; margin: 0 0 8px; }
+    p.note { margin: 0 0 18px; color: #5c564c; }
+    table { width: 100%; border-collapse: collapse; background: #fffdf8; }
+    th, td { border-bottom: 1px solid #e4dccb; padding: 8px 10px; text-align: left; vertical-align: top; }
+    th { cursor: pointer; user-select: none; }
+    th button {
+      all: unset;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 6px 8px;
+      border: 1px solid #e4dccb;
+      border-radius: 6px;
+      font: inherit;
+    }
+    a { color: #146c43; }
+    .filters th { cursor: default; font-weight: 400; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>HTML index</h1>
+    <p class="note">Newest update first. Filter any column, or click a heading to sort.</p>
+    <table id="pages">
+      <thead>
+        <tr class="filters">
+          <th><input aria-label="Filter category" data-col="0"></th>
+          <th><input aria-label="Filter HTML" data-col="1"></th>
+          <th><input aria-label="Filter summary" data-col="2"></th>
+          <th><input aria-label="Filter create date" data-col="3"></th>
+          <th><input aria-label="Filter update date" data-col="4"></th>
+        </tr>
+        <tr>
+          <th><button type="button" data-sort="0">Category</button></th>
+          <th><button type="button" data-sort="1">HTML</button></th>
+          <th><button type="button" data-sort="2">Summary</button></th>
+          <th><button type="button" data-sort="3">Create date</button></th>
+          <th><button type="button" data-sort="4">Update date</button></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Analysis</td>
+          <td><a href="othello-best-move.html">Othello — how the computer picks a move</a></td>
+          <td>How the Othello computer chooses a move: legal flips, random easy play, and alpha-beta search with a positional score.</td>
+          <td>2026-10-26</td>
+          <td>2026-10-26</td>
+        </tr>
+      </tbody>
+    </table>
+  </main>
+  <script>
+    const table = document.getElementById("pages");
+    const tbody = table.tBodies[0];
+    const filters = [...table.querySelectorAll("input[data-col]")];
+    let sortCol = 4;
+    let sortAsc = false;
+
+    function cellText(row, col) {
+      return row.cells[col].textContent.trim().toLowerCase();
+    }
+
+    function apply() {
+      const rows = [...tbody.rows];
+      const terms = filters.map((input) => input.value.trim().toLowerCase());
+      rows.sort((a, b) => {
+        const left = cellText(a, sortCol);
+        const right = cellText(b, sortCol);
+        const order = left < right ? -1 : left > right ? 1 : 0;
+        return sortAsc ? order : -order;
+      });
+      for (const row of rows) {
+        const visible = terms.every((term, index) => !term || cellText(row, index).includes(term));
+        row.hidden = !visible;
+        tbody.append(row);
+      }
+    }
+
+    filters.forEach((input) => input.addEventListener("input", apply));
+    table.querySelectorAll("button[data-sort]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const col = Number(button.dataset.sort);
+        if (sortCol === col) {
+          sortAsc = !sortAsc;
+        } else {
+          sortCol = col;
+          sortAsc = col >= 3 ? false : true;
+        }
+        apply();
+      });
+    });
+    apply();
+  </script>
+</body>
+</html>
