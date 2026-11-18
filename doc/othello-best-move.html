@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Othello — how the computer picks a move</title>
+  <!-- created: 2026-10-26 -->
+  <!-- updated: 2026-10-26 -->
+  <style>
+    :root {
+      --ink: #1c1915;
+      --muted: #5c564c;
+      --paper: #f6f3ec;
+      --card: #fffdf8;
+      --line: #e4dccb;
+      --felt: #1b6b43;
+      --felt-dark: #145536;
+      --black: #171717;
+      --white: #f7f3ea;
+      --amber: #9a5410;
+      --amber-bg: #f8e7cf;
+      --good: #146c43;
+      --bad: #8f2d2d;
+      --chip: #efe8d8;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 480px at 10% -10%, #efe4cc 0%, transparent 60%),
+        var(--paper);
+      font: 17px/1.55 "Segoe UI", "Helvetica Neue", sans-serif;
+    }
+    a { color: var(--good); }
+    header.page {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 40px 24px 8px;
+    }
+    header.page p.kicker {
+      margin: 0 0 8px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      font-size: 12px;
+      color: var(--amber);
+      font-weight: 700;
+    }
+    h1 {
+      font-family: Georgia, "Iowan Old Style", serif;
+      font-weight: 600;
+      font-size: clamp(32px, 5vw, 46px);
+      line-height: 1.15;
+      margin: 0 0 12px;
+    }
+    h2 {
+      font-family: Georgia, "Iowan Old Style", serif;
+      font-weight: 600;
+      font-size: 28px;
+      margin: 0 0 12px;
+    }
+    h3 { margin: 22px 0 8px; font-size: 18px; }
+    p { margin: 0 0 12px; }
+    .lede { font-size: 19px; max-width: 68ch; }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 8px 24px 64px;
+    }
+    section {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 22px 22px 8px;
+      margin: 16px 0;
+    }
+    .answer {
+      border-color: #d7c39a;
+      background: linear-gradient(180deg, #fff9ef, var(--card) 80px);
+    }
+    ol.steps, ul { margin: 8px 0 16px; padding-left: 1.2em; }
+    li { margin: 6px 0; }
+    code, .mono {
+      font-family: "SFMono-Regular", ui-monospace, Consolas, monospace;
+      font-size: 0.92em;
+    }
+    code {
+      background: var(--chip);
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+    }
+    table.data {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0 16px;
+      font-size: 15px;
+    }
+    table.data th, table.data td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    table.data th { color: var(--muted); font-weight: 650; font-size: 13px; }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 22px;
+      align-items: start;
+    }
+    @media (max-width: 800px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+    .board-wrap { display: inline-block; }
+    .coords {
+      display: grid;
+      grid-template-columns: 22px auto;
+      gap: 4px;
+      align-items: center;
+    }
+    .files, .ranks {
+      display: grid;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .files { grid-template-columns: repeat(8, 42px); text-align: center; margin-left: 26px; }
+    .ranks { grid-template-rows: repeat(8, 42px); align-items: center; justify-items: center; }
+    .board {
+      display: grid;
+      grid-template-columns: repeat(8, 42px);
+      grid-template-rows: repeat(8, 42px);
+      background: var(--felt-dark);
+      border: 4px solid #0e3b26;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .sq {
+      width: 42px;
+      height: 42px;
+      background: var(--felt);
+      border: 1px solid rgba(0,0,0,0.18);
+      display: grid;
+      place-items: center;
+      position: relative;
+      padding: 0;
+      font: inherit;
+      color: inherit;
+    }
+    button.sq { cursor: pointer; }
+    button.sq:hover { background: #228655; }
+    button.sq.picked { outline: 3px solid var(--amber); outline-offset: -3px; }
+    .disc {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      box-shadow: inset 0 -3px 0 rgba(0,0,0,0.25);
+    }
+    .disc.B { background: radial-gradient(circle at 35% 35%, #4a4a4a, var(--black)); }
+    .disc.W { background: radial-gradient(circle at 35% 35%, #fff, #ddd4c2); box-shadow: inset 0 -2px 0 rgba(0,0,0,0.12); }
+    .hint {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.45);
+    }
+    .hint.best { background: #f0c36a; box-shadow: 0 0 0 3px rgba(240,195,106,0.35); }
+    .weights .sq {
+      font-size: 13px;
+      font-weight: 700;
+      color: #f4fff8;
+      cursor: default;
+    }
+    .weights .sq.neg { color: #ffd0d0; background: #6d2a32; }
+    .weights .sq.pos { background: #1b6b43; }
+    .weights .sq.hot { background: #0f5132; }
+    .weights .sq:hover { filter: brightness(1.15); }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; }
+    .tag {
+      background: var(--chip);
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 13px;
+    }
+    .tag strong { font-variant-numeric: tabular-nums; }
+    .cards { display: grid; gap: 8px; }
+    .move-card {
+      display: grid;
+      grid-template-columns: 64px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      width: 100%;
+      text-align: left;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 12px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font: inherit;
+      color: inherit;
+    }
+    .move-card.best {
+      border-color: #e2c089;
+      background: var(--amber-bg);
+    }
+    .move-card .name { font-weight: 750; font-size: 18px; }
+    .move-card .sub { color: var(--muted); font-size: 13px; }
+    .score {
+      font-variant-numeric: tabular-nums;
+      font-weight: 750;
+      font-size: 20px;
+    }
+    .math {
+      background: #f8f4ea;
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin: 8px 0 16px;
+      font-variant-numeric: tabular-nums;
+    }
+    .math div { margin: 3px 0; }
+    .callout {
+      border-left: 4px solid var(--amber);
+      padding: 4px 0 4px 12px;
+      margin: 8px 0 16px;
+      color: var(--ink);
+    }
+    nav.toc ol { margin: 0 0 8px; }
+    footer.note { color: var(--muted); font-size: 14px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <header class="page">
+    <p class="kicker">Othello · computer player</p>
+    <h1>How the computer picks a move</h1>
+    <p class="lede">The computer lists every legal flip, then keeps the move that looks best after looking ahead. Easy play skips the look-ahead and chooses a legal square at random. Medium and Hard search with alpha-beta, and they score unfinished positions with a fixed table of square values plus mobility.</p>
+  </header>
+  <main>
+    <section class="answer" id="answer">
+      <h2>The short version</h2>
+      <ol class="steps">
+        <li>Find every empty square where the side to move can bracket at least one enemy disc and flip it.</li>
+        <li>On Easy, play one of those squares at random and stop.</li>
+        <li>On Medium and Hard, sort those squares so corners are tried first and squares touching an empty corner are tried last.</li>
+        <li>Look ahead 1 ply, then 2, and so on, up to the difficulty limit or the time budget. Each finished depth replaces the chosen move. A depth that runs out of time is thrown away.</li>
+        <li>At every imagined position, Black’s search (when Black is the computer) keeps the larger score, and White’s replies keep the smaller score. The score is a win or loss if the game is already over; otherwise it is the weighted board plus mobility, with disc count added only later in the game.</li>
+      </ol>
+      <p>The logic lives in <code>othello.ai.ComputerPlayer</code> and <code>othello.ai.Difficulty</code>. The desktop window and the web game both call <code>choose</code>.</p>
+    </section>
+
+    <section id="contents">
+      <h2>Contents</h2>
+      <nav class="toc">
+        <ol>
+          <li><a href="#difficulty">What each difficulty actually does</a></li>
+          <li><a href="#legal">What makes a move legal</a></li>
+          <li><a href="#order">Which move is examined first</a></li>
+          <li><a href="#search">Looking ahead</a></li>
+          <li><a href="#score">How a position is scored</a></li>
+          <li><a href="#example">A position you can click through</a></li>
+          <li><a href="#ties">Ties, time, and a cancelled search</a></li>
+        </ol>
+      </nav>
+    </section>
+
+    <section id="difficulty">
+      <h2>What each difficulty actually does</h2>
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Setting</th>
+            <th>How a move is chosen</th>
+            <th>Depth cap</th>
+            <th>Time budget</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Easy</td>
+            <td>One uniform random legal move. The search never runs.</td>
+            <td>1, stored and unused</td>
+            <td>150 ms, stored and unused</td>
+          </tr>
+          <tr>
+            <td>Medium</td>
+            <td>Alpha-beta search, iterative deepening.</td>
+            <td>4 plies</td>
+            <td>700 ms</td>
+          </tr>
+          <tr>
+            <td>Hard</td>
+            <td>The same search, allowed to go deeper.</td>
+            <td>7 plies</td>
+            <td>1.4 s</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>A ply is one side’s move. Medium can see the computer’s move, the reply, the computer’s next move, and one more reply, when the clock allows the full 4 plies. The default in both the window and the web game is Medium.</p>
+    </section>
+
+    <section id="legal">
+      <h2>What makes a move legal</h2>
+      <p>The board is 8×8. This program labels columns <strong>a–h</strong> from the left and rows <strong>1–8</strong> from the top, so <strong>a1</strong> is the top-left corner. A move is a row and a column. <code>Move.toString</code> prints that label.</p>
+      <p><code>Board.legalMoves</code> walks every square from top to bottom, left to right. An empty square is legal when at least one of the eight directions contains one or more enemy discs and then a disc of the player to move. Playing the square places the player’s disc and flips every such line. A square that flips nothing is ignored.</p>
+      <p>If the side to move has no legal square, and the opponent still has one, that side passes. The search spends one ply on the pass and then lets the opponent play. If neither side has a move, the game is over and the search scores the disc count immediately.</p>
+    </section>
+
+    <section id="order">
+      <h2>Which move is examined first</h2>
+      <p>Before any score is computed, Medium and Hard sort the legal list with <code>priority</code>. A smaller number is tried sooner. Java’s sort is stable, so squares with the same priority stay in the original top-to-bottom, left-to-right order.</p>
+      <table class="data">
+        <thead>
+          <tr><th>Priority</th><th>Square</th><th>Why it is ordered this way</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>0</td><td>A corner: a1, h1, a8, h8</td><td>Corners cannot be flipped later. Trying them first raises the best score quickly, which lets later branches stop early.</td></tr>
+          <tr><td>1</td><td>Any other edge square</td><td>Edges are safer than the interior once the nearby corner is already taken.</td></tr>
+          <tr><td>2</td><td>Every remaining square</td><td>Ordinary interior moves.</td></tr>
+          <tr><td>4</td><td>A square touching a corner that is still empty</td><td>These are the usual C-squares (straight beside a corner) and X-squares (diagonally beside a corner). They are tried last so a safer move can set a high bar first.</td></tr>
+        </tbody>
+      </table>
+      <p>The “touching an empty corner” test runs before the edge test. So b1, next to an empty a1, is priority 4 even though it sits on the edge. After a1 is occupied, b1 is no longer beside an empty corner and falls back to priority 1.</p>
+    </section>
+
+    <section id="search">
+      <h2>Looking ahead</h2>
+      <p><code>choose</code> remembers a best move, starting as the first move after the sort. It then calls <code>bestAtDepth</code> for depth 1, then 2, and so on, until <code>maxDepth</code>. When a depth finishes, that move becomes the best and is moved to the front of the list so the next depth tries it first.</p>
+      <p>The root scores every candidate. It keeps a move only when the new value is strictly greater than the value it already has. The root’s beta bound stays at the top of the integer range, so a root move is never skipped.</p>
+      <p>Under the root, <code>minimax</code> does the usual alpha-beta cutoff. The computer’s own turns keep the maximum. The opponent’s turns keep the minimum. When beta is less than or equal to alpha, the rest of that node’s moves are skipped, because they cannot change the decision higher up. The search copies the board for every move it tries, so the real game is unchanged.</p>
+      <div class="callout">
+        <p>Depth 1 means: play each of my moves and score the position immediately, with the opponent still to move. Depth 2 also plays the opponent’s best reply, then scores. Each extra depth adds one more ply. A pass consumes a ply as well.</p>
+      </div>
+      <p>Before every node and every move, the search checks the clock and the cancel flag. If either says stop, it throws <code>SearchExpired</code>. <code>choose</code> catches that and returns the best move from the last depth that finished. A half-finished deeper search does not change the move.</p>
+    </section>
+
+    <section id="score">
+      <h2>How a position is scored</h2>
+      <p>Every number is from the computer’s own color, called <code>me</code> in the search. A higher number is better for that color.</p>
+      <h3>A finished game</h3>
+      <p>Let the disc difference be my discs minus the opponent’s discs.</p>
+      <div class="math">
+        <div>I have more discs → <span class="mono">100000 + difference</span></div>
+        <div>I have fewer discs → <span class="mono">-100000 + difference</span></div>
+        <div>Equal discs → <span class="mono">0</span></div>
+      </div>
+      <p>The smallest winning score is 100001. The weighted score used during the game stays far below that, so a proven win always beats a merely promising position, and a proven loss always loses to one.</p>
+      <h3>An unfinished position</h3>
+      <p>Three ingredients are added, and the recipe changes with how many empty squares remain.</p>
+      <ul>
+        <li><strong>Position.</strong> Add the table value of each of my discs. Subtract the table value of each opponent disc.</li>
+        <li><strong>Mobility.</strong> My legal-move count minus the opponent’s legal-move count.</li>
+        <li><strong>Disc difference.</strong> My discs minus the opponent’s discs. The opening ignores this on purpose: grabbing discs early often hands the opponent the corners.</li>
+      </ul>
+      <table class="data">
+        <thead>
+          <tr><th>Empty squares</th><th>Stage</th><th>Score</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>21 or more</td><td>Opening, including the start (60 empty)</td><td>position + 15 × mobility</td></tr>
+          <tr><td>11 to 20</td><td>Middle</td><td>position + 10 × mobility + 4 × disc difference</td></tr>
+          <tr><td>10 or fewer</td><td>End</td><td>25 × disc difference + position ÷ 4 + 4 × mobility</td></tr>
+        </tbody>
+      </table>
+      <p>The endgame division is integer division, toward zero, the same as Java’s <code>positional / 4</code>.</p>
+      <h3>The square table</h3>
+      <p>Corners are worth 120. The diagonal neighbor of a corner, the X-square, is worth −40. The edge neighbor, the C-square, is worth −20. Stable edges and the center are mildly positive. Hover a square to read its role.</p>
+      <div class="board-wrap weights" id="weight-board"></div>
+      <p id="weight-caption" class="callout">Corner a1 is worth 120. A disc placed here can never be flipped.</p>
+      <div class="legend">
+        <span class="tag"><strong>120</strong> corner</span>
+        <span class="tag"><strong>−40</strong> X-square</span>
+        <span class="tag"><strong>−20</strong> C-square</span>
+        <span class="tag"><strong>20 / 5</strong> other edge</span>
+        <span class="tag"><strong>15 / 3</strong> interior</span>
+        <span class="tag"><strong>−5</strong> beside a C-square</span>
+      </div>
+    </section>
+
+    <section id="example">
+      <h2>A position you can click through</h2>
+      <p>This is the position in <code>ComputerPlayerTest.mediumTakesAnOpenCorner</code>. Black is to move. Five squares are legal. Medium and Hard play <strong>a1</strong>.</p>
+      <div class="grid-2">
+        <div>
+          <div class="files" aria-hidden="true"><span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span></div>
+          <div class="coords">
+            <div class="ranks" id="ex-ranks" aria-hidden="true"></div>
+            <div class="board" id="example-board" role="grid" aria-label="Example position"></div>
+          </div>
+          <p id="board-caption">Black to move. Dots are legal squares. The gold dot is a1, the move the search keeps.</p>
+        </div>
+        <div>
+          <div class="cards" id="move-cards"></div>
+        </div>
+      </div>
+      <h3 id="breakdown-title">After Black plays a1</h3>
+      <div class="math" id="breakdown"></div>
+      <h3>The same position at deeper depths</h3>
+      <p>These values are the search score for each Black move when the full depth is allowed to finish. a1 stays strictly ahead at every depth Medium will reach. At depth 2, every White reply to a1 leaves the same score, 111, so White’s “best” reply does not change the choice.</p>
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Black move</th>
+            <th>Depth 1</th>
+            <th>Depth 2</th>
+            <th>Depth 3</th>
+            <th>Depth 4</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>a1</td><td>120</td><td>111</td><td>147</td><td>63</td></tr>
+          <tr><td>d3</td><td>49</td><td>4</td><td>97</td><td>54</td></tr>
+          <tr><td>c4</td><td>49</td><td>4</td><td>97</td><td>54</td></tr>
+          <tr><td>f5</td><td>49</td><td>4</td><td>120</td><td>51</td></tr>
+          <tr><td>e6</td><td>49</td><td>4</td><td>135</td><td>51</td></tr>
+        </tbody>
+      </table>
+      <p>Depth 1 is the opening formula on the position after Black’s move. For a1 that arithmetic is the whole story, because 57 squares are still empty and mobility is 0:</p>
+      <div class="math">
+        <div>Black discs: a1 (120) + b1 (−20) + c1 (20) + e4 (3) + d5 (3) = 126</div>
+        <div>White discs: d4 (3) + e5 (3) = 6</div>
+        <div>Position = 126 − 6 = 120</div>
+        <div>Score = 120 + 15 × 0 = 120</div>
+      </div>
+      <p>b1 is worth −20, and Black still plays there because taking a1 flips the white disc that was on b1. The corner’s 120 more than pays for standing on the C-square.</p>
+    </section>
+
+    <section id="ties">
+      <h2>Ties, time, and a cancelled search</h2>
+      <h3>The opening</h3>
+      <p>From the standard start, Black’s only legal squares are d3, c4, f5, and e6. They are symmetric. Each has priority 2, and each scores 9 at one ply: position 9, mobility 0, disc difference +3, and the opening formula drops the disc difference. The search keeps the first of them, <strong>d3</strong>, because a later equal score does not replace the current best. Deeper depths stay tied for the same reason of symmetry, so the tie-break still plays d3.</p>
+      <h3>The clock</h3>
+      <p>The deadline is <code>now + budget</code> in nanoseconds, taken once at the start of <code>choose</code>. Medium has 700 ms and Hard has 1.4 s for the whole deepening loop, shared across every depth. If depth 4 is still running when Medium’s budget ends, the move from depth 3 is what gets played. If even depth 1 is interrupted, the move is the first square after the priority sort, because that is the fallback stored before the loop.</p>
+      <h3>Cancel</h3>
+      <p>The desktop player passes a cancel check into <code>choose</code>, so leaving the position can abandon the search. The web game calls the overload that never cancels. Easy never consults either the clock or the cancel flag.</p>
+      <h3>Where to read it</h3>
+      <table class="data">
+        <thead><tr><th>Piece</th><th>Method</th></tr></thead>
+        <tbody>
+          <tr><td>Entry, random Easy play, deepening loop</td><td><code>ComputerPlayer.choose</code></td></tr>
+          <tr><td>Root: try each move, keep the strict maximum</td><td><code>bestAtDepth</code></td></tr>
+          <tr><td>Opponent replies, passes, cutoffs</td><td><code>minimax</code></td></tr>
+          <tr><td>Win, loss, and draw</td><td><code>terminal</code></td></tr>
+          <tr><td>Square table, mobility, phase formula</td><td><code>heuristic</code> and <code>WEIGHTS</code></td></tr>
+          <tr><td>Corner-first ordering</td><td><code>priority</code></td></tr>
+          <tr><td>Legal flips</td><td><code>Board.legalMoves</code> and <code>Board.flips</code></td></tr>
+        </tbody>
+      </table>
+      <p class="note">Source: <code>Othello/src/main/java/othello/ai/ComputerPlayer.java</code>. The depth table above follows that search with no time cutoff.</p>
+    </section>
+  </main>
+  <script>
+    const WEIGHTS = [
+      [120, -20, 20,  5,  5, 20, -20, 120],
+      [-20, -40, -5, -5, -5, -5, -40, -20],
+      [ 20,  -5, 15,  3,  3, 15,  -5,  20],
+      [  5,  -5,  3,  3,  3,  3,  -5,   5],
+      [  5,  -5,  3,  3,  3,  3,  -5,   5],
+      [ 20,  -5, 15,  3,  3, 15,  -5,  20],
+      [-20, -40, -5, -5, -5, -5, -40, -20],
+      [120, -20, 20,  5,  5, 20, -20, 120]
+    ];
+    const DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+    const ROLES = {
+      "120": "Corner. A disc here stays put for the rest of the game.",
+      "-40": "X-square, diagonally beside a corner. Giving this square away often gives the corner away next.",
+      "-20": "C-square, on the edge beside a corner. Same danger, slightly milder in the table.",
+      "20": "Edge square, two steps from the corner.",
+      "5": "Middle of an edge.",
+      "15": "Inner square, useful once the edges are stable.",
+      "3": "Center. A small, steady value.",
+      "-5": "Just inside a C-square. Mildly bad while the corner is still open."
+    };
+
+    function label(row, col) {
+      return String.fromCharCode(97 + col) + (row + 1);
+    }
+
+    function parse(text) {
+      const cells = [...text].filter((ch) => ch === "." || ch === "B" || ch === "W");
+      if (cells.length !== 64) throw new Error("board length " + cells.length);
+      return cells.join("");
+    }
+
+    function flips(cells, row, col, player) {
+      if (cells[row * 8 + col] !== ".") return [];
+      const opp = player === "B" ? "W" : "B";
+      const out = [];
+      for (const [dr, dc] of DIRS) {
+        const line = [];
+        let r = row + dr;
+        let c = col + dc;
+        while (r >= 0 && c >= 0 && r < 8 && c < 8 && cells[r * 8 + c] === opp) {
+          line.push(r * 8 + c);
+          r += dr;
+          c += dc;
+        }
+        if (line.length && r >= 0 && c >= 0 && r < 8 && c < 8 && cells[r * 8 + c] === player) {
+          out.push(...line);
+        }
+      }
+      return out;
+    }
+
+    function legal(cells, player) {
+      const moves = [];
+      for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+          if (flips(cells, row, col, player).length) moves.push([row, col]);
+        }
+      }
+      return moves;
+    }
+
+    function apply(cells, row, col, player) {
+      const next = cells.split("");
+      for (const index of flips(cells, row, col, player)) next[index] = player;
+      next[row * 8 + col] = player;
+      return next.join("");
+    }
+
+    function positional(cells, me) {
+      const opp = me === "B" ? "W" : "B";
+      let score = 0;
+      const mine = [];
+      const theirs = [];
+      for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+          const disc = cells[row * 8 + col];
+          if (disc === me) {
+            score += WEIGHTS[row][col];
+            mine.push([label(row, col), WEIGHTS[row][col]]);
+          } else if (disc === opp) {
+            score -= WEIGHTS[row][col];
+            theirs.push([label(row, col), WEIGHTS[row][col]]);
+          }
+        }
+      }
+      return { score, mine, theirs };
+    }
+
+    function heuristic(cells, me) {
+      const opp = me === "B" ? "W" : "B";
+      const pos = positional(cells, me);
+      const myMoves = legal(cells, me).length;
+      const oppMoves = legal(cells, opp).length;
+      const mobility = myMoves - oppMoves;
+      const diff = [...cells].filter((ch) => ch === me).length - [...cells].filter((ch) => ch === opp).length;
+      const empty = [...cells].filter((ch) => ch === ".").length;
+      let total;
+      let phase;
+      if (empty > 20) {
+        total = pos.score + mobility * 15;
+        phase = "opening";
+      } else if (empty > 10) {
+        total = pos.score + mobility * 10 + diff * 4;
+        phase = "middle";
+      } else {
+        total = diff * 25 + Math.trunc(pos.score / 4) + mobility * 4;
+        phase = "end";
+      }
+      return { total, phase, pos, mobility, myMoves, oppMoves, diff, empty };
+    }
+
+    function paintBoard(root, cells, options) {
+      root.replaceChildren();
+      const legalSet = new Set((options.hints || []).map(([r, c]) => r + "," + c));
+      for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "sq";
+          button.dataset.row = String(row);
+          button.dataset.col = String(col);
+          const key = row + "," + col;
+          const disc = cells[row * 8 + col];
+          if (disc === "B" || disc === "W") {
+            const piece = document.createElement("span");
+            piece.className = "disc " + disc;
+            button.append(piece);
+          } else if (legalSet.has(key)) {
+            const hint = document.createElement("span");
+            hint.className = "hint" + (options.best && options.best[0] === row && options.best[1] === col ? " best" : "");
+            button.append(hint);
+          }
+          if (options.picked && options.picked[0] === row && options.picked[1] === col) {
+            button.classList.add("picked");
+          }
+          button.setAttribute("aria-label", label(row, col) + (disc === "." ? " empty" : " " + (disc === "B" ? "black" : "white")));
+          button.addEventListener("click", () => options.onPick && options.onPick(row, col));
+          root.append(button);
+        }
+      }
+    }
+
+    const start = parse(`
+      .WB.....
+      ........
+      ........
+      ...WB...
+      ...BW...
+      ........
+      ........
+      ........
+    `);
+    const blackMoves = legal(start, "B");
+    let picked = [0, 0];
+
+    function show(move) {
+      picked = move;
+      const after = apply(start, move[0], move[1], "B");
+      const info = heuristic(after, "B");
+      paintBoard(document.getElementById("example-board"), start, {
+        hints: blackMoves,
+        best: [0, 0],
+        picked: move,
+        onPick(row, col) {
+          if (flips(start, row, col, "B").length) show([row, col]);
+        }
+      });
+      document.getElementById("board-caption").textContent =
+        "Black to move. Selected " + label(move[0], move[1]) + ". The gold dot is the move the search keeps.";
+      const cards = document.getElementById("move-cards");
+      cards.replaceChildren();
+      for (const candidate of blackMoves) {
+        const scored = heuristic(apply(start, candidate[0], candidate[1], "B"), "B");
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "move-card" + (candidate[0] === 0 && candidate[1] === 0 ? " best" : "");
+        if (candidate[0] === move[0] && candidate[1] === move[1]) card.classList.add("picked");
+        card.innerHTML =
+          '<div class="name">' + label(candidate[0], candidate[1]) + '</div>' +
+          '<div class="sub">' + (candidate[0] === 0 ? "Corner · priority 0" : "Interior · priority 2") +
+          (candidate[0] === move[0] && candidate[1] === move[1] ? " · showing" : "") + "</div>" +
+          '<div class="score">' + scored.total + "</div>";
+        card.addEventListener("click", () => show(candidate));
+        cards.append(card);
+      }
+      const mine = info.pos.mine.map(([name, value]) => name + " (" + value + ")").join(" + ");
+      const theirs = info.pos.theirs.map(([name, value]) => name + " (" + value + ")").join(" + ");
+      const formula = info.phase === "opening"
+        ? info.pos.score + " + 15 × " + info.mobility + " = " + info.total
+        : String(info.total);
+      document.getElementById("breakdown-title").textContent = "After Black plays " + label(move[0], move[1]);
+      document.getElementById("breakdown").innerHTML =
+        "<div>Flips " + flips(start, move[0], move[1], "B").map((i) => label(Math.floor(i / 8), i % 8)).join(", ") + "</div>" +
+        "<div>Black: " + mine + "</div>" +
+        "<div>White: " + theirs + "</div>" +
+        "<div>Position " + info.pos.score + " · mobility " + info.mobility +
+        " (" + info.myMoves + " − " + info.oppMoves + ") · disc difference " + info.diff +
+        " · empty " + info.empty + " · " + info.phase + "</div>" +
+        "<div>Score = " + formula + "</div>";
+    }
+
+    const ranks = document.getElementById("ex-ranks");
+    for (let row = 1; row <= 8; row++) {
+      const span = document.createElement("span");
+      span.textContent = String(row);
+      ranks.append(span);
+    }
+
+    const weightRoot = document.getElementById("weight-board");
+    weightRoot.className = "board weights";
+    const caption = document.getElementById("weight-caption");
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const value = WEIGHTS[row][col];
+        const cell = document.createElement("div");
+        cell.className = "sq " + (value < 0 ? "neg" : value >= 120 ? "hot" : "pos");
+        cell.textContent = value > 0 ? "+" + value : String(value);
+        cell.tabIndex = 0;
+        const text = label(row, col) + " is worth " + value + ". " + (ROLES[String(value)] || "");
+        cell.addEventListener("mouseenter", () => { caption.textContent = text; });
+        cell.addEventListener("focus", () => { caption.textContent = text; });
+        weightRoot.append(cell);
+      }
+    }
+
+    show([0, 0]);
+    const check = heuristic(apply(start, 0, 0, "B"), "B").total;
+    if (check !== 120) {
+      document.getElementById("breakdown").insertAdjacentHTML("afterbegin", "<div>Score check failed: a1 scored " + check + ".</div>");
+    }
+  </script>
+</body>
+</html>
