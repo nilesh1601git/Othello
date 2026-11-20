@@ -29,6 +29,12 @@ public final class ComputerPlayer {
     return choose(board, player, difficulty, () -> false);
   }
 
+ /*---------------------------------------------------------------------------------*
+ \* Method : choose
+ \* Gets legal moves using Board.legalMoves(player).
+ \* Easy: chooses a random legal move.
+ \* Medium/Hard: sorts moves using priority(...), then performs iterative deepening.
+ \*---------------------------------------------------------------------------------*/
   public Move choose(Board board, Disc player, Difficulty difficulty, BooleanSupplier cancelled) {
     List<Move> moves = new ArrayList<>(board.legalMoves(player));
     if (moves.isEmpty() || cancelled.getAsBoolean()) {
@@ -53,6 +59,13 @@ public final class ComputerPlayer {
     return best;
   }
 
+  /* -----------------------------------------------------------------------------------*
+  \* Method: bestAtDepth
+  \* Tests each candidate move.
+  \* Copies the board with Board.copy().
+  \* Applies the move with Board.apply(...).
+  \* Keeps the move with the highest returned score.
+  \* -----------------------------------------------------------------------------------*/
   private Move bestAtDepth(Board board, Disc player, List<Move> moves, int depth, long deadline,
       BooleanSupplier cancelled) {
     Move bestMove = moves.get(0);
@@ -73,6 +86,13 @@ public final class ComputerPlayer {
     return bestMove;
   }
 
+  /* -----------------------------------------------------------------------------------
+  \* Method : minimax
+  \* Simulates the computer’s and opponent’s future moves.
+  \* Uses alpha-beta pruning.
+  \* Handles passes with Board.hasMove(...).
+  \* Recursively evaluates moves until the search depth is reached.
+  \* -----------------------------------------------------------------------------------*/
   private int minimax(Board board, Disc toMove, Disc me, int depth, int alpha, int beta,
       long deadline, BooleanSupplier cancelled) {
     expireIfNeeded(deadline, cancelled);
